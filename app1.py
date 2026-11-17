@@ -75,20 +75,41 @@ def parse_sub_table(sub_list, target_field_id):
                 flattened.append(row_data)
     return flattened
 
-def fetch_records_with_query(limit_count=500):
+def fetch_records_with_date_query(start_d, end_d, limit_count=500):
+    """
+    指定された期間（更新日ベース等）をサーバー側でクエリ検索し、タイムアウトを回避して取得する
+    """
     url = f"{POCKET_BASE_URL}/api/apps/{APP_ID}/records"
     headers = {"X-At-Pocket-API-Key": POCKET_API_KEY, "Accept": "application/json"}
+    
+    # サーバー負荷とタイムアウトを防ぐため、指定期間にマッチする更新日クエリを付与
+    query_parts = []
+    if start_d:
+        query_parts.append(f'updatedAt >= "{start_d} 00:00:00"')
+    if end_d:
+        query_parts.append(f'updatedAt <= "{end_d} 23:59:59"')
+        
     params = {
         "sort": "-recordId",
         "limit": limit_count
     }
+    if query_parts:
+        params["query"] = " and ".join(query_parts)
+
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=30)
+        response = requests.get(url, headers=headers, params=params, timeout=35)
         if response.status_code == 200:
             result = response.json()
             return result.get("records", result.get("Data", result.get("Records", [])))
+        else:
+            # クエリ未対応時のフォールバック（件数を絞って安全に取得）
+            params_fallback = {"sort": "-recordId", "limit": 200}
+            response_fb = requests.get(url, headers=headers, params=params_fallback, timeout=35)
+            if response_fb.status_code == 200:
+                res_data = response_fb.json()
+                return res_data.get("records", res_data.get("Data", res_data.get("Records", [])))
     except Exception as e:
-        st.error(f"API通信エラー: {e}")
+        st.error(f"API通信エラー（タイムアウト等）: {e}")
     return []
 
 def fetch_record_by_order(order_no):
@@ -372,23 +393,26 @@ with tab_order:
 
 with tab_summary:
     st.subheader("📊 外発注の分割期間集計（進捗区分：計上済）")
-    st.info("💡 進捗区分（`field-114`）が**「計上済」**であり、各明細の**納入日**が指定期間内のデータを「用紙」「印刷」「製本」「その他」別に集計します。")
+    st.info("💡 指定した期間をサーバーにクエリとして投げることで、タイムアウトを防ぎながら高速に集計します。")
     
     col_f1, col_f2, col_f3 = st.columns([2, 2, 3])
     with col_f1:
-        start_date = st.date_input("開始日（納入日基準）", value=date.today().replace(day=1))
+        start_date = st.date_input("開始日（期間指定）", value=date.today().replace(day=1))
     with col_f2:
-        end_date = st.date_input("終了日（納入日基準）", value=date.today())
+        end_date = st.date_input("終了日（期間指定）", value=date.today())
     with col_f3:
         st.markdown("<br>", unsafe_allow_html=True)
         run_summary = st.button("🔄 「計上済」データを集計実行", type="primary")
         
     if run_summary:
-        with st.spinner("対象データを取得・集計中..."):
-            all_records = fetch_records_with_query(limit_count=500)
+        with st.spinner("サーバーからデータを取得・集計中（タイムアウト対策適用中）..."):
+            start_str = start_date.strftime("%Y-%m-%d") if start_date else None
+            end_str = end_date.strftime("%Y-%m-%d") if end_date else None
+            
+            # クエリ検索でスムーズに取得（最大500件）
+            all_records = fetch_records_with_date_query(start_d=start_str, end_d=end_str, limit_count=500)
             
             if all_records:
-                # 分類別のリストを用意
                 lists_by_type = {
                     "用紙": [],
                     "印刷": [],
@@ -406,9 +430,8 @@ with tab_summary:
                 for item in all_records:
                     rec = item.get("record", item)
                     
-                    # ③ 進捗区分 field-114 が「計上済」であることのチェック
+                    # 進捗区分 field-114 が「計上済」であることのチェック
                     progress_status = rec.get('field-114', '')
-                    # チェックボックスや文字列型に対応（リスト形式や文字列形式を想定）
                     is_keijou = False
                     if isinstance(progress_status, list):
                         if "計上済" in progress_status:
@@ -417,7 +440,7 @@ with tab_summary:
                         is_keijou = True
                     
                     if not is_keijou:
-                        continue # 計上済でなければスキップ
+                        continue
                         
                     order_no = rec.get('field-95', '')
                     customer = rec.get('field-98', '')
@@ -446,7 +469,6 @@ with tab_summary:
                             if not supplier or supplier in ["未指定発注先", "未指定", "未定"]:
                                 supplier = "未指定"
                                 
-                            # ① 発注書PDFと全く同じ項目（カラム）構造になるよう整理したベースデータ
                             base_row = {
                                 "受注番号": order_no,
                                 "得意先名": customer,
@@ -455,7 +477,6 @@ with tab_summary:
                                 "納入日": delivery_date_str,
                             }
                             
-                            # 種別ごとの詳細項目の追加
                             if label == "用紙":
                                 base_row.update({
                                     "用途": d.get("用途", ""), "納品先": d.get("納品先", ""),
@@ -491,7 +512,6 @@ with tab_summary:
                                 
                             lists_by_type[label].append(base_row)
                 
-                # ② 用紙・印刷・製本・その他で別々にタブ（またはセクション）表示
                 t_paper, t_print, t_book, t_other = st.tabs(["📄 用紙外発注", "🖨️ 印刷外発注", "📚 製本外発注", "📦 その他外発注"])
                 
                 with t_paper:
@@ -527,4 +547,4 @@ with tab_summary:
                         st.info("該当するその他外発注データはありません。")
                         
             else:
-                st.error("❌ レコードの取得に失敗しました。")
+                st.error("❌ レコードの取得に失敗しました。タイムアウトまたはAPI接続をご確認ください。")
