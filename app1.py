@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 from reportlab.lib.pagesizes import landscape, A5
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -106,12 +106,12 @@ def fetch_record_by_order(order_no):
     return None
 
 # ==========================================
-# PDF生成関数 (A5横サイズ)
+# PDF生成関数 (A5横サイズ・濃紺テーマ)
 # ==========================================
 def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
     buffer = io.BytesIO()
     # A5横サイズ (Landscape A5: width=595.27, height=419.52 points)
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(A5), leftMargin=20, rightMargin=20, topMargin=20, bottomMargin=20)
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A5), leftMargin=18, rightMargin=18, topMargin=18, bottomMargin=18)
     
     # フォント登録
     font_path = "NotoSansJP-Regular.ttf"
@@ -122,52 +122,81 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
         font_name = 'Helvetica'
         
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('TitleStyle', fontName=font_name, fontSize=14, leading=16, alignment=1)
-    cell_style = ParagraphStyle('CellStyle', fontName=font_name, fontSize=8, leading=10)
-    header_cell_style = ParagraphStyle('HeaderCellStyle', fontName=font_name, fontSize=8, leading=10, textColor=colors.HexColor('#333333'))
+    
+    # カラー定義（濃紺テーマ）
+    NAVY_MAIN = colors.HexColor('#1B365D')
+    NAVY_LIGHT = colors.HexColor('#F0F4F8')
+    TEXT_DARK = colors.HexColor('#222222')
+    
+    title_style = ParagraphStyle('TitleStyle', fontName=font_name, fontSize=13, leading=15, textColor=NAVY_MAIN, alignment=1)
+    cell_style = ParagraphStyle('CellStyle', fontName=font_name, fontSize=7.5, leading=9.5, textColor=TEXT_DARK)
+    header_cell_style = ParagraphStyle('HeaderCellStyle', fontName=font_name, fontSize=7.5, leading=9.5, textColor=colors.white)
+    issuer_style = ParagraphStyle('IssuerStyle', fontName=font_name, fontSize=7.5, leading=10, textColor=TEXT_DARK)
     
     story = []
     
-    # タイトル & ヘッダー情報
     order_no = rec.get('field-95', '')
     customer = rec.get('field-98', '')
-    staff = rec.get('field-100', '')
     
-    title_text = f"<b>発 注 書（{sub_type}）</b>"
-    story.append(Paragraph(title_text, title_style))
-    story.append(Spacer(1, 10))
+    # 各行から発注者名を取得（共通または最初の行のもの）
+    staff_name = rows_data[0].get('発注者', rec.get('field-100', '')) if rows_data else rec.get('field-100', '')
     
-    header_data = [
-        [Paragraph(f"<b>発注先:</b> {supplier_name} 御中", cell_style), Paragraph(f"<b>受注番号:</b> {order_no}", cell_style)],
-        [Paragraph(f"<b>得意先名:</b> {customer}", cell_style), Paragraph(f"<b>営業担当:</b> {staff}", cell_style)]
+    # 2カラムヘッダー (左側：発行元情報、右側：宛先・受注番号等)
+    issuer_html = (
+        "<b>ヤマノ印刷株式会社</b><br/>"
+        "〒101-0044 千代田区鍛冶町1-6-15<br/>"
+        "TEL: 03-3253-8851<br/>"
+        f"<b>担当:</b> {staff_name}"
+    )
+    
+    dest_html = (
+        f"<b>発注先:</b> <font size=10><b>{supplier_name} 御中</b></font><br/>"
+        f"<b>受注番号:</b> {order_no}  <b>得意先名:</b> {customer}"
+    )
+    
+    header_table_data = [
+        [Paragraph(title_text := f"<b>発 注 書（{sub_type}）</b>", title_style), Paragraph("", issuer_style)],
+        [Paragraph(issuer_html, issuer_style), Paragraph(dest_html, issuer_style)]
     ]
-    t_header = Table(header_data, colWidths=[250, 285])
+    
+    t_header = Table(header_table_data, colWidths=[240, 315])
     t_header.setStyle(TableStyle([
-        ('BOX', (0,0), (-1,-1), 0.5, colors.grey),
-        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
-        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F9F9F9')),
+        ('SPAN', (0,0), (1,0)),
+        ('BACKGROUND', (0,0), (-1,-1), NAVY_LIGHT),
+        ('BOX', (0,0), (-1,-1), 1, NAVY_MAIN),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#D0DCE5')),
         ('TOPPADDING', (0,0), (-1,-1), 4),
         ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ('LEFTPADDING', (0,0), (-1,-1), 6),
+        ('RIGHTPADDING', (0,0), (-1,-1), 6),
     ]))
-    story.append(t_header)
-    story.append(Spacer(1, 15))
     
-    # 明細テーブルの構築（種別ごとのレイアウト）
+    story.append(t_header)
+    story.append(Spacer(1, 8))
+    
     table_content = []
+    table_styles = [
+        ('BOX', (0,0), (-1,-1), 1, NAVY_MAIN),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
+        ('BACKGROUND', (0,0), (-1,0), NAVY_MAIN),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+    ]
     
     if sub_type == "用紙外発注":
-        # ヘッダー行
         table_content.append([
-            Paragraph("<b>用途</b>", header_cell_style), Paragraph("<b>納品先</b>", header_cell_style),
-            Paragraph("<b>用紙銘柄</b>", header_cell_style), Paragraph("<b>原紙サイズ</b>", header_cell_style),
-            Paragraph("<b>斤量</b>", header_cell_style), Paragraph("<b>目</b>", header_cell_style),
-            Paragraph("<b>全判</b>", header_cell_style), Paragraph("<b>断裁後</b>", header_cell_style),
-            Paragraph("<b>枚数</b>", header_cell_style), Paragraph("<b>納入日</b>", header_cell_style),
-            Paragraph("<b>時間</b>", header_cell_style)
+            Paragraph("用途", header_cell_style), Paragraph("納品先", header_cell_style),
+            Paragraph("用紙銘柄", header_cell_style), Paragraph("原紙サイズ", header_cell_style),
+            Paragraph("斤量", header_cell_style), Paragraph("目", header_cell_style),
+            Paragraph("全判", header_cell_style), Paragraph("断裁後", header_cell_style),
+            Paragraph("枚数", header_cell_style), Paragraph("納入日", header_cell_style),
+            Paragraph("時間", header_cell_style)
         ])
-        for row in rows_data:
-            # 1レコード2行組表現（1行目：基本情報、2行目：備考など）
-            n_date = str(row.get('納入日', ''))[5:] # 月日表示
+        col_widths = [45, 52, 55, 48, 40, 35, 42, 50, 42, 53, 43]
+        
+        for idx, row in enumerate(rows_data):
+            n_date = str(row.get('納入日', ''))[5:]
             table_content.append([
                 Paragraph(str(row.get('用途', '')), cell_style),
                 Paragraph(str(row.get('納品先', '')), cell_style),
@@ -181,20 +210,24 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
                 Paragraph(n_date, cell_style),
                 Paragraph(str(row.get('時間', '')), cell_style)
             ])
-            # 備考行（2段目）
-            remark_text = f"<b>備考:</b> {row.get('備考', '')}"
-            table_content.append([Paragraph(remark_text, cell_style), '', '', '', '', '', '', '', '', '', ''])
-            
+            # 備考欄（横長フル活用：全列スパン）
+            remark_row_idx = len(table_content)
+            table_content.append([Paragraph(f"<b>備考:</b> {row.get('備考', '')}", cell_style)] + [''] * 10)
+            table_styles.append(('SPAN', (0, remark_row_idx), (10, remark_row_idx)))
+            table_styles.append(('BACKGROUND', (0, remark_row_idx), (10, remark_row_idx), colors.HexColor('#F8F9FA')))
+
     elif sub_type == "印刷外発注":
         table_content.append([
-            Paragraph("<b>用途</b>", header_cell_style), Paragraph("<b>納品先</b>", header_cell_style),
-            Paragraph("<b>用紙銘柄</b>", header_cell_style), Paragraph("<b>印刷サイズ</b>", header_cell_style),
-            Paragraph("<b>斤量</b>", header_cell_style), Paragraph("<b>目</b>", header_cell_style),
-            Paragraph("<b>通数</b>", header_cell_style), Paragraph("<b>頁数</b>", header_cell_style),
-            Paragraph("<b>表/裏</b>", header_cell_style), Paragraph("<b>台/版</b>", header_cell_style),
-            Paragraph("<b>納入日</b>", header_cell_style)
+            Paragraph("用途", header_cell_style), Paragraph("納品先", header_cell_style),
+            Paragraph("用紙銘柄", header_cell_style), Paragraph("印刷サイズ", header_cell_style),
+            Paragraph("斤量", header_cell_style), Paragraph("目", header_cell_style),
+            Paragraph("通数", header_cell_style), Paragraph("頁数", header_cell_style),
+            Paragraph("表/裏", header_cell_style), Paragraph("台/版", header_cell_style),
+            Paragraph("納入日", header_cell_style)
         ])
-        for row in rows_data:
+        col_widths = [45, 52, 55, 48, 40, 35, 42, 42, 45, 45, 56]
+        
+        for idx, row in enumerate(rows_data):
             n_date = str(row.get('納入日', ''))[5:]
             table_content.append([
                 Paragraph(str(row.get('用途', '')), cell_style),
@@ -209,18 +242,22 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
                 Paragraph(f"{row.get('台数','')}/{row.get('版数','')}", cell_style),
                 Paragraph(n_date, cell_style)
             ])
-            remark_text = f"<b>備考:</b> {row.get('備考', '')}"
-            table_content.append([Paragraph(remark_text, cell_style), '', '', '', '', '', '', '', '', '', ''])
+            remark_row_idx = len(table_content)
+            table_content.append([Paragraph(f"<b>備考:</b> {row.get('備考', '')}", cell_style)] + [''] * 10)
+            table_styles.append(('SPAN', (0, remark_row_idx), (10, remark_row_idx)))
+            table_styles.append(('BACKGROUND', (0, remark_row_idx), (10, remark_row_idx), colors.HexColor('#F8F9FA')))
 
     elif sub_type == "製本外発注":
         table_content.append([
-            Paragraph("<b>用途</b>", header_cell_style), Paragraph("<b>納品先</b>", header_cell_style),
-            Paragraph("<b>製本</b>", header_cell_style), Paragraph("<b>加工</b>", header_cell_style),
-            Paragraph("<b>詳細</b>", header_cell_style), Paragraph("<b>部数</b>", header_cell_style),
-            Paragraph("<b>納入日</b>", header_cell_style), Paragraph("<b>時間</b>", header_cell_style),
+            Paragraph("用途", header_cell_style), Paragraph("納品先", header_cell_style),
+            Paragraph("製本", header_cell_style), Paragraph("加工", header_cell_style),
+            Paragraph("詳細", header_cell_style), Paragraph("部数", header_cell_style),
+            Paragraph("納入日", header_cell_style), Paragraph("時間", header_cell_style),
             Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style)
         ])
-        for row in rows_data:
+        col_widths = [55, 75, 55, 55, 105, 55, 60, 45, 0, 0, 0] # 9列目以降は非表示に近い形
+        
+        for idx, row in enumerate(rows_data):
             n_date = str(row.get('納入日', ''))[5:]
             table_content.append([
                 Paragraph(str(row.get('用途', '')), cell_style),
@@ -233,17 +270,22 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
                 Paragraph(str(row.get('時間', '')), cell_style),
                 '', '', ''
             ])
-            remark_text = f"<b>備考:</b> {row.get('備考', '')}"
-            table_content.append([Paragraph(remark_text, cell_style), '', '', '', '', '', '', '', '', '', ''])
+            # 横長にフル活用（0～10列目をスパン）
+            remark_row_idx = len(table_content)
+            table_content.append([Paragraph(f"<b>備考:</b> {row.get('備考', '')}", cell_style)] + [''] * 10)
+            table_styles.append(('SPAN', (0, remark_row_idx), (10, remark_row_idx)))
+            table_styles.append(('BACKGROUND', (0, remark_row_idx), (10, remark_row_idx), colors.HexColor('#F8F9FA')))
 
     elif sub_type == "その他外発注":
         table_content.append([
-            Paragraph("<b>納品先</b>", header_cell_style), Paragraph("<b>数量</b>", header_cell_style),
-            Paragraph("<b>仕入単価</b>", header_cell_style), Paragraph("<b>合計金額</b>", header_cell_style),
-            Paragraph("<b>納入日</b>", header_cell_style), Paragraph("<b>時間</b>", header_cell_style),
+            Paragraph("納品先", header_cell_style), Paragraph("数量", header_cell_style),
+            Paragraph("仕入単価", header_cell_style), Paragraph("合計金額", header_cell_style),
+            Paragraph("納入日", header_cell_style), Paragraph("時間", header_cell_style),
             Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style)
         ])
-        for row in rows_data:
+        col_widths = [110, 50, 60, 65, 60, 45, 35, 35, 30, 30, 35]
+        
+        for idx, row in enumerate(rows_data):
             n_date = str(row.get('納入日', ''))[5:]
             table_content.append([
                 Paragraph(str(row.get('納品先', '')), cell_style),
@@ -254,22 +296,20 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
                 Paragraph(str(row.get('時間', '')), cell_style),
                 '', '', '', '', ''
             ])
-            # 2段目：依頼内容
-            table_content.append([Paragraph(f"<b>依頼内容:</b> {row.get('作業内容・仕様', '')}", cell_style), '', '', '', '', '', '', '', '', '', ''])
-            # 3段目：備考
-            table_content.append([Paragraph(f"<b>備考:</b> {row.get('備考', '')}", cell_style), '', '', '', '', '', '', '', '', '', ''])
+            # 2段目：依頼内容（横長フル活用）
+            req_row_idx = len(table_content)
+            table_content.append([Paragraph(f"<b>依頼内容:</b> {row.get('作業内容・仕様', '')}", cell_style)] + [''] * 10)
+            table_styles.append(('SPAN', (0, req_row_idx), (10, req_row_idx)))
+            table_styles.append(('BACKGROUND', (0, req_row_idx), (10, req_row_idx), colors.HexColor('#F8F9FA')))
+            
+            # 3段目：備考（横長フル活用）
+            rem_row_idx = len(table_content)
+            table_content.append([Paragraph(f"<b>備考:</b> {row.get('備考', '')}", cell_style)] + [''] * 10)
+            table_styles.append(('SPAN', (0, rem_row_idx), (10, rem_row_idx)))
+            table_styles.append(('BACKGROUND', (0, rem_row_idx), (10, rem_row_idx), colors.HexColor('#F8F9FA')))
 
-    # テーブル全体のスタイル設定 (535pt幅を11列に配分)
-    col_widths = [48, 52, 55, 48, 42, 38, 45, 52, 45, 55, 55]
     t_main = Table(table_content, colWidths=col_widths)
-    t_main.setStyle(TableStyle([
-        ('BOX', (0,0), (-1,-1), 0.5, colors.grey),
-        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
-        ('BACKGROUND', (0,0), (10,0), colors.HexColor('#EEEEEE')),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('TOPPADDING', (0,0), (-1,-1), 3),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
-    ]))
+    t_main.setStyle(TableStyle(table_styles))
     
     story.append(t_main)
     doc.build(story)
@@ -282,7 +322,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
 tab_order, tab_summary = st.tabs(["📋 発注書作成・確認", "📊 期間集計"])
 
 with tab_order:
-    st.subheader("📋 受注番号ごとの外発注明細確認 & 発注書PDF作成")
+    st.subheader("📋 受注番号ごとの外発注明細確認 & 発注書PDF作成（濃紺テーマ）")
     
     input_order_no = st.text_input("受注番号（field-95）を入力してください", placeholder="例: 26-0719 など")
     
@@ -305,7 +345,6 @@ with tab_order:
             st.markdown("---")
             st.markdown("### 📄 発注先ごとの発注書PDFダウンロード")
             
-            # 各サブテーブルのデータをパースして発注先ごとにグループ化
             target_tables = {
                 "用紙外発注": ("field-151", "発注先"),
                 "印刷外発注": ("field-162", "発注先"),
@@ -319,7 +358,6 @@ with tab_order:
                 parsed = parse_sub_table(raw_data, f_id)
                 
                 if parsed:
-                    # 発注先ごとにグループ分け
                     suppliers = {}
                     for row in parsed:
                         sup = row.get(supplier_key, "未指定発注先")
@@ -333,7 +371,6 @@ with tab_order:
                         has_supplier_data = True
                         st.markdown(f"**【{sub_name}】 発注先: `{sup_name}`** （明細件数: {len(rows)}件）")
                         
-                        # PDF生成ボタン
                         pdf_bytes = generate_order_pdf(rec, sub_name, sup_name, rows)
                         st.download_button(
                             label=f"📥 【{sub_name}】 {sup_name} 宛 発注書PDFをダウンロード",
