@@ -75,30 +75,41 @@ def parse_sub_table(sub_list, target_field_id):
                 flattened.append(row_data)
     return flattened
 
-@st.cache_data(ttl=60)
-def fetch_recent_records(limit_count=100):
+def fetch_records_with_query(start_d=None, end_d=None, limit_count=500):
     """
-    タイムアウトと1000件の壁を防ぐため、取得件数をデフォルト100件に絞り、タイムアウトを35秒に延長
+    タイムアウトと1000件の壁を防ぐため、指定期間のクエリをかけて新しい順（降順）で取得する
     """
     url = f"{POCKET_BASE_URL}/api/apps/{APP_ID}/records"
     headers = {"X-At-Pocket-API-Key": POCKET_API_KEY, "Accept": "application/json"}
+    
+    # クエリ条件の構築（@pocketのAPI仕様に合わせた条件指定）
+    query_parts = []
+    if start_d:
+        query_parts.append(f'updatedAt >= "{start_d} 00:00:00"')
+    if end_d:
+        query_parts.append(f'updatedAt <= "{end_d} 23:59:59"')
+        
     params = {
         "sort": "-recordId",
         "limit": limit_count
     }
+    if query_parts:
+        params["query"] = " and ".join(query_parts)
+
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=35)
+        response = requests.get(url, headers=headers, params=params, timeout=30)
         if response.status_code == 200:
             result = response.json()
             return result.get("records", result.get("Data", result.get("Records", [])))
         else:
-            response_fallback = requests.get(url, headers=headers, timeout=35)
-            if response_fallback.status_code == 200:
-                res_fb = response_fallback.json()
-                recs = res_fb.get("records", res_fb.get("Data", res_fb.get("Records", [])))
-                return sorted(recs, key=lambda x: int(x.get("recordId", 0)), reverse=True)[:limit_count]
+            # クエリ未対応またはエラー時のフォールバック（全件から新着順で安全に取得）
+            params_fallback = {"sort": "-recordId", "limit": limit_count}
+            response_fb = requests.get(url, headers=headers, params=params_fallback, timeout=30)
+            if response_fb.status_code == 200:
+                res_data = response_fb.json()
+                return res_data.get("records", res_data.get("Data", res_data.get("Records", [])))
     except Exception as e:
-        st.error(f"API通信エラー（タイムアウト等）: {e}")
+        st.error(f"API通信エラー: {e}")
     return []
 
 def fetch_record_by_order(order_no):
@@ -383,20 +394,25 @@ with tab_order:
 
 with tab_summary:
     st.subheader("📊 外発注の期間集計・クロス集計")
-    st.info("💡 サーバー負荷とタイムアウトを防ぐため、**最新100件**のデータを取得し、納入日などの日付で絞り込んで集計します。")
+    st.info("💡 指定した期間（開始日〜終了日）のデータを新着順に最大500件まで効率よく取得して集計します。")
     
     col_f1, col_f2, col_f3 = st.columns([2, 2, 3])
     with col_f1:
-        start_date = st.date_input("開始日（納入日基準）", value=None)
+        start_date = st.date_input("開始日", value=date.today().replace(day=1))
     with col_f2:
-        end_date = st.date_input("終了日（納入日基準）", value=None)
+        end_date = st.date_input("終了日", value=date.today())
     with col_f3:
         st.markdown("<br>", unsafe_allow_html=True)
-        run_summary = st.button("🔄 最新データから取得して集計を実行", type="primary")
+        run_summary = st.button("🔄 指定期間のデータを取得して集計を実行", type="primary")
         
     if run_summary:
-        with st.spinner("サーバーから最新データを取得・集計中..."):
-            all_records = fetch_recent_records(limit_count=100)
+        with st.spinner("サーバーからデータを取得・集計中..."):
+            # 指定された期間を文字列に変換してクエリ検索
+            start_str = start_date.strftime("%Y-%m-%d") if start_date else None
+            end_str = end_date.strftime("%Y-%m-%d") if end_date else None
+            
+            all_records = fetch_records_with_query(start_d=start_str, end_d=end_str, limit_count=500)
+            
             if all_records:
                 summary_list = []
                 for item in all_records:
@@ -411,18 +427,18 @@ with tab_summary:
                         for d in parsed_details:
                             delivery_date_str = d.get("納入日", "")
                             
+                            # アプリ側でも念のため期間内か厳密にチェック
                             if start_date or end_date:
-                                if not delivery_date_str:
-                                    continue
-                                try:
-                                    d_date = datetime.strptime(str(delivery_date_str)[:10], "%Y-%m-%d").date()
-                                    if start_date and d_date < start_date:
-                                        continue
-                                    if end_date and d_date > end_date:
-                                        continue
-                                except ValueError:
-                                    pass
-                                    
+                                if delivery_date_str:
+                                    try:
+                                        d_date = datetime.strptime(str(delivery_date_str)[:10], "%Y-%m-%d").date()
+                                        if start_date and d_date < start_date:
+                                            continue
+                                        if end_date and d_date > end_date:
+                                            continue
+                                    except ValueError:
+                                        pass
+                                        
                             summary_list.append({
                                 "受注番号": order_no,
                                 "得意先名": customer,
@@ -448,6 +464,6 @@ with tab_summary:
                     st.markdown("#### 📋 検出された全明細データ一覧")
                     st.dataframe(df_summary, use_container_width=True)
                 else:
-                    st.warning("⚠️ 指定した条件（期間）に一致する外発注明細データが見つかりませんでした。")
+                    st.warning("⚠️ 指定した期間内に有効な外発注明細データが見つかりませんでした。")
             else:
                 st.error("❌ レコードの取得に失敗しました。APIの接続状態をご確認ください。")
