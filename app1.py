@@ -106,12 +106,12 @@ def fetch_record_by_order(order_no):
     return None
 
 # ==========================================
-# PDF生成関数 (A5横サイズ・幅完全安全調整版)
+# PDF生成関数 (幅を合計530ptに完全に固定)
 # ==========================================
 def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
     buffer = io.BytesIO()
-    # A5横幅=595.27pt, 余白左右各15pt -> 描画可能幅=565.27pt
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(A5), leftMargin=15, rightMargin=15, topMargin=15, bottomMargin=15)
+    # A5横幅=595.27pt, 余白左右各32.63pt -> 描画可能幅 = exactly 530.0pt
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A5), leftMargin=32.63, rightMargin=32.63, topMargin=25, bottomMargin=25)
     
     font_path = "NotoSansJP-Regular.ttf"
     if os.path.exists(font_path):
@@ -151,8 +151,8 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
         [Paragraph(issuer_html, issuer_style), Paragraph(dest_html, issuer_style)]
     ]
     
-    # ヘッダー幅合計 = 535pt (描画可能幅内に確実に収める)
-    t_header = Table(header_table_data, colWidths=[200, 335])
+    # ヘッダー幅の合計 = exactly 530.0pt
+    t_header = Table(header_table_data, colWidths=[200, 330])
     t_header.setStyle(TableStyle([
         ('SPAN', (0,0), (1,0)),
         ('BACKGROUND', (0,0), (-1,-1), NAVY_LIGHT),
@@ -179,7 +179,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
         ('RIGHTPADDING', (0,0), (-1,-1), 2.5),
     ]
     
-    # すべてのテーブルの列幅合計をちょうど 535pt に統一
+    # 各テーブルの列幅合計をすべて厳密に「530.0pt」に統一
     if sub_type == "用紙外発注":
         table_content.append([
             Paragraph("用途", header_cell_style), Paragraph("納品先", header_cell_style),
@@ -189,7 +189,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
             Paragraph("枚数", header_cell_style), Paragraph("納入日", header_cell_style),
             Paragraph("時間", header_cell_style)
         ])
-        col_widths = [45, 52, 55, 45, 38, 30, 40, 48, 42, 50, 40] # 合計535pt
+        col_widths = [42, 50, 52, 45, 36, 30, 40, 48, 40, 52, 45] # 合計 530.0pt
         
         for idx, row in enumerate(rows_data):
             n_date = str(row.get('納入日', ''))[5:]
@@ -220,7 +220,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
             Paragraph("表/裏", header_cell_style), Paragraph("台/版", header_cell_style),
             Paragraph("納入日", header_cell_style)
         ])
-        col_widths = [45, 52, 55, 45, 38, 30, 40, 40, 42, 42, 86] # 合計535pt
+        col_widths = [42, 50, 52, 45, 36, 30, 40, 40, 42, 42, 91] # 合計 530.0pt
         
         for idx, row in enumerate(rows_data):
             n_date = str(row.get('納入日', ''))[5:]
@@ -250,7 +250,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
             Paragraph("納入日", header_cell_style), Paragraph("時間", header_cell_style),
             Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style)
         ])
-        col_widths = [55, 75, 55, 55, 110, 55, 60, 70, 0, 0, 0] # 合計535pt
+        col_widths = [50, 70, 52, 52, 110, 52, 52, 42, 0, 0, 0] # 合計 530.0pt
         
         for idx, row in enumerate(rows_data):
             n_date = str(row.get('納入日', ''))[5:]
@@ -277,7 +277,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
             Paragraph("納入日", header_cell_style), Paragraph("時間", header_cell_style),
             Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style)
         ])
-        col_widths = [110, 50, 65, 70, 65, 50, 35, 30, 30, 15, 15] # 合計535pt
+        col_widths = [110, 50, 65, 70, 65, 50, 30, 30, 30, 15, 15] # 合計 530.0pt
         
         for idx, row in enumerate(rows_data):
             n_date = str(row.get('納入日', ''))[5:]
