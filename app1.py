@@ -14,8 +14,8 @@ from reportlab.pdfbase.ttfonts import TTFont
 # ==========================================
 # ページ基本設定
 # ==========================================
-st.set_page_config(page_title="外発注管理・発注書＆期間集計ツール", layout="wide")
-st.title("📦 外発注管理・発注書作成 & 分割期間集計ツール")
+st.set_page_config(page_title="発注管理・発注書＆期間集計ツール", layout="wide")
+st.title("📦 発注書作成 & 期間集計ツール")
 
 # ==========================================
 # 🔐 認証チェック（URLパラメータからのアクセスの場合は自動バイパス）
@@ -375,10 +375,10 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
 # ==========================================
 # タブ構成
 # ==========================================
-tab_order, tab_summary = st.tabs(["📋 発注書作成・確認", "📊 分割期間集計（計上済）"])
+tab_order, tab_summary = st.tabs(["📋 発注書作成・確認", "📊 期間集計（受注計上済）"])
 
 with tab_order:
-    st.subheader("📋 受注番号ごとの外発注明細確認 & 発注書PDF作成")
+    st.subheader("📋 受注番号ごとの外注明細確認 & 発注書PDF作成")
     
     # URLクエリパラメータから受け取った受注番号を初期値にセット
     input_order_no = st.text_input(
@@ -446,7 +446,7 @@ with tab_order:
             st.error(f"❌ 受注番号「{input_order_no}」に一致するレコードが見つかりませんでした。")
 
 with tab_summary:
-    st.subheader("📊 外発注の分割期間集計（進捗区分：計上済）")
+    st.subheader("📊 外発注の期間集計（進捗区分：計上済）")
     st.info("💡 指定した期間をサーバーにクエリとして投げることで、タイムアウトを防ぎながら高速に集計します。")
     
     col_f1, col_f2, col_f3 = st.columns([2, 2, 3])
