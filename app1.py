@@ -147,12 +147,16 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
     cell_style = ParagraphStyle('CellStyle', fontName=font_name, fontSize=7.5, leading=9.5, textColor=TEXT_DARK)
     header_cell_style = ParagraphStyle('HeaderCellStyle', fontName=font_name, fontSize=7.5, leading=9.5, textColor=colors.white)
     issuer_style = ParagraphStyle('IssuerStyle', fontName=font_name, fontSize=7.5, leading=10, textColor=TEXT_DARK)
+    date_style = ParagraphStyle('DateStyle', fontName=font_name, fontSize=8, leading=10, textColor=TEXT_DARK, alignment=2) # 右寄せ
     
     story = []
     
     order_no = rec.get('field-95', '')
     customer = rec.get('field-98', '')
     staff_name = rows_data[0].get('発注者', rec.get('field-100', '')) if rows_data else rec.get('field-100', '')
+    
+    # 当日の日付を取得（例: 2026年11月18日）
+    today_str = date.today().strftime("%Y年%m月%d日")
     
     issuer_html = (
         "<b>ヤマノ印刷株式会社</b><br/>"
@@ -166,13 +170,12 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
     )
     
     header_table_data = [
-        [Paragraph(f"<b>発 注 書（{sub_type}）</b>", title_style), Paragraph("", issuer_style)],
+        [Paragraph(f"<b>発 注 書（{sub_type}）</b>", title_style), Paragraph(f"<b>発注日:</b> {today_str}", date_style)],
         [Paragraph(issuer_html, issuer_style), Paragraph(dest_html, issuer_style)]
     ]
     
     t_header = Table(header_table_data, colWidths=[215, 340])
     t_header.setStyle(TableStyle([
-        ('SPAN', (0,0), (1,0)),
         ('BACKGROUND', (0,0), (-1,-1), NAVY_LIGHT),
         ('BOX', (0,0), (-1,-1), 1, NAVY_MAIN),
         ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#D0DCE5')),
@@ -180,6 +183,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
         ('BOTTOMPADDING', (0,0), (-1,-1), 4),
         ('LEFTPADDING', (0,0), (-1,-1), 6),
         ('RIGHTPADDING', (0,0), (-1,-1), 6),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
     ]))
     story.append(t_header)
     story.append(Spacer(1, 10))
@@ -361,7 +365,6 @@ with tab_order:
                     suppliers = {}
                     for row in parsed:
                         sup = row.get(supplier_key, "")
-                        # 💡 ここで発注先が空欄、未指定、または「未指定発注先」のものを除外します
                         if not sup or sup in ["未指定発注先", "未指定", "未定"]:
                             continue
                             
