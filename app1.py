@@ -7,20 +7,17 @@ import streamlit as st
 # ==========================================
 # ページ基本設定
 # ==========================================
-st.set_page_config(page_title="外発注管理・発注書＆期間集計ツール", layout="wide")
-st.title("📦 外発注管理・発注書作成 & 期間集計ツール")
+st.set_page_config(page_title="外発注管理・発注書＆期間集計ツール（テスト版）", layout="wide")
+st.title("📦 外発注管理・発注書作成 & 期間集計ツール（ベタ打ちテスト）")
 
 # ==========================================
-# @pocket認証設定 (Secretsから完全に取得)
+# @pocket認証設定 (一時的なベタ打ち)
 # ==========================================
-if "pocket" in st.secrets:
-    POCKET_API_KEY = st.secrets["pocket"]["api_key"]
-    POCKET_BASE_URL = st.secrets["pocket"].get("base_url", "https://app050.at-pocket.com/seihon01_bb")
-else:
-    st.error("🚨 警告: secrets.toml（またはStreamlit CloudのSecrets）に [pocket] の設定が見つかりません。")
-    st.stop()
-
+POCKET_API_KEY = "AfMdA3MjacXouAAhgaWFfchlwcIsCKf2ToIOl9OW"
+POCKET_BASE_URL = "https://app050.at-pocket.com/seihon01_bb"
 APP_ID = 41  # 発注アプリのApp ID
+
+st.sidebar.success("🔑 APIキーを直接読み込んでテスト中")
 
 # ==========================================
 # データ取得関数
@@ -31,11 +28,12 @@ def fetch_all_records():
     headers = {"X-At-Pocket-API-Key": POCKET_API_KEY, "Accept": "application/json"}
     try:
         response = requests.get(url, headers=headers, timeout=15)
+        st.write(f"🔍 [debug] 全件取得APIステータスコード: {response.status_code}")
         if response.status_code == 200:
             result = response.json()
             return result.get("records", result.get("Data", result.get("Records", [])))
         else:
-            st.error(f"APIエラー (ステータスコード: {response.status_code})")
+            st.error(f"APIエラー: {response.text}")
     except Exception as e:
         st.error(f"API通信エラー: {e}")
     return []
@@ -46,6 +44,7 @@ def fetch_record_by_order(order_no):
     params = {"query": f'field-95 = "{order_no}"'}
     try:
         response = requests.get(url, headers=headers, params=params, timeout=15)
+        st.write(f"🔍 [debug] 受注番号検索APIステータスコード: {response.status_code}")
         if response.status_code == 200:
             result = response.json()
             records = result.get("records", result.get("Data", result.get("Records", [])))
@@ -77,6 +76,7 @@ with tab_order:
             
         if record_data:
             rec = record_data.get("record", record_data)
+            st.success("✨ レコードの取得に成功しました！")
             
             # メイン情報の表示
             col1, col2, col3 = st.columns(3)
@@ -90,7 +90,6 @@ with tab_order:
             st.markdown("---")
             st.markdown("### 📦 外発注明細テーブル一覧")
             
-            # 4つの明細テーブル定義
             sub_tables = {
                 "用紙外発注 (field-151)": "field-151",
                 "印刷外発注 (field-162)": "field-162",
@@ -98,89 +97,4 @@ with tab_order:
                 "その他外発注 (field-155)": "field-155"
             }
             
-            selected_table_name = st.selectbox("確認・出力する発注種別を選択", list(sub_tables.keys()))
-            target_field_id = sub_tables[selected_table_name]
-            
-            sub_data = rec.get(target_field_id, [])
-            
-            if sub_data and isinstance(sub_data, list):
-                df_sub = pd.DataFrame(sub_data)
-                st.dataframe(df_sub, use_container_width=True)
-                
-                # Excelダウンロード機能
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df_sub.to_excel(writer, index=False, sheet_name='外発注明細')
-                output.seek(0)
-                
-                st.download_button(
-                    label=f"📥 選択した明細（{selected_table_name}）をExcelでダウンロード",
-                    data=output,
-                    file_name=f"発注書_{input_order_no}_{target_field_id}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    type="primary"
-                )
-            else:
-                st.info(f"ℹ️ この受注番号には「{selected_table_name}」の明細データが登録されていないか、空です。")
-                
-            with st.expander("🔍 このレコードの生JSONデータ構造を確認"):
-                st.json(record_data)
-        else:
-            st.error(f"❌ 受注番号「{input_order_no}」に一致するレコードが見つかりませんでした。")
-
-# ------------------------------------------
-# タブ2: 期間集計
-# ------------------------------------------
-with tab_summary:
-    st.subheader("📊 外発注の期間集計・クロス集計")
-    st.info("💡 登録されているすべてのレコードを一括取得し、得意先名や営業担当者ごとの外発注状況を集計します。")
-    
-    if st.button("🔄 データを一括取得して集計を実行", type="primary"):
-        with st.spinner("全レコードを取得・集計中..."):
-            all_records = fetch_all_records()
-            
-            if all_records:
-                summary_list = []
-                for item in all_records:
-                    rec = item.get("record", item)
-                    order_no = rec.get('field-95', '')
-                    customer = rec.get('field-98', '')
-                    staff = rec.get('field-100', '')
-                    
-                    # 各明細データの抽出
-                    for label, f_id in [("用紙", "field-151"), ("印刷", "field-162"), ("製本", "field-153"), ("その他", "field-155")]:
-                        details = rec.get(f_id, [])
-                        if isinstance(details, list):
-                            for d in details:
-                                summary_list.append({
-                                    "受注番号": order_no,
-                                    "得意先名": customer,
-                                    "営業担当": staff,
-                                    "発注種別": label,
-                                    "明細データ": str(d)
-                                })
-                
-                if summary_list:
-                    df_summary = pd.DataFrame(summary_list)
-                    st.success(f"✅ 集計完了！全 {len(df_summary)} 件の外発注明細を検出しました。")
-                    
-                    # 担当者別・得意先別の件数集計
-                    col_s1, col_s2 = st.columns(2)
-                    with col_s1:
-                        st.markdown("#### 👤 営業担当者別発注件数")
-                        staff_counts = df_summary['営業担当'].value_counts().reset_index()
-                        staff_counts.columns = ['営業担当', '件数']
-                        st.dataframe(staff_counts, use_container_width=True)
-                        
-                    with col_s2:
-                        st.markdown("#### 🏢 得意先別発注件数")
-                        cust_counts = df_summary['得意先名'].value_counts().reset_index()
-                        cust_counts.columns = ['得意先名', '件数']
-                        st.dataframe(cust_counts, use_container_width=True)
-                        
-                    st.markdown("#### 📋 検出された全明細データ一覧")
-                    st.dataframe(df_summary, use_container_width=True)
-                else:
-                    st.warning("⚠️ 有効な外発注明細データが見つかりませんでした。")
-            else:
-                st.error("❌ レコードの取得に失敗しました。")
+            selected_
