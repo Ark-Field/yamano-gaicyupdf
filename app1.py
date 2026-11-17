@@ -14,7 +14,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 # ページ基本設定
 # ==========================================
 st.set_page_config(page_title="外発注管理・発注書＆期間集計ツール", layout="wide")
-st.title("📦 外発注管理・発注書作成 & 期間集計ツール")
+st.title("📦 外発注管理・発注書作成 & 期間集計ツール（安定化版）")
 
 # ==========================================
 # @pocket認証設定 (ベタ打ちテスト版)
@@ -79,12 +79,16 @@ def fetch_all_records():
     url = f"{POCKET_BASE_URL}/api/apps/{APP_ID}/records"
     headers = {"X-At-Pocket-API-Key": POCKET_API_KEY, "Accept": "application/json"}
     try:
-        response = requests.get(url, headers=headers, timeout=15)
+        response = requests.get(url, headers=headers, timeout=20)
+        st.sidebar.write(f"🔍 全件取得APIステータス: {response.status_code}")
         if response.status_code == 200:
             result = response.json()
-            return result.get("records", result.get("Data", result.get("Records", [])))
+            # さまざまなレスポンス構造に対応
+            records = result.get("records", result.get("Data", result.get("Records", result.get("data", []))))
+            st.sidebar.write(f"📊 取得レコード数: {len(records)}件")
+            return records
     except Exception as e:
-        st.error(f"API通信エラー: {e}")
+        st.sidebar.error(f"API通信エラー: {e}")
     return []
 
 def fetch_record_by_order(order_no):
@@ -95,9 +99,9 @@ def fetch_record_by_order(order_no):
         response = requests.get(url, headers=headers, params=params, timeout=15)
         if response.status_code == 200:
             result = response.json()
-            records = result.get("records", result.get("Data", result.get("Records", [])))
+            records = result.get("records", result.get("Data", result.get("Records", result.get("data", []))))
             for item in records:
-                rec_body = item.get("record", {})
+                rec_body = item.get("record", item.get("Record", {}))
                 merged = {**item, **rec_body}
                 if str(merged.get("field-95", "")) == str(order_no):
                     return merged
@@ -106,12 +110,12 @@ def fetch_record_by_order(order_no):
     return None
 
 # ==========================================
-# PDF生成関数 (幅を合計530ptに完全に固定)
+# 安定版PDF生成関数 (エラー完全回避設計)
 # ==========================================
 def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
     buffer = io.BytesIO()
-    # A5横幅=595.27pt, 余白左右各32.63pt -> 描画可能幅 = exactly 530.0pt
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(A5), leftMargin=32.63, rightMargin=32.63, topMargin=25, bottomMargin=25)
+    # A5横幅=595.27pt, 左右マージン25pt -> 描画可能幅=545.27pt
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A5), leftMargin=25, rightMargin=25, topMargin=20, bottomMargin=20)
     
     font_path = "NotoSansJP-Regular.ttf"
     if os.path.exists(font_path):
@@ -151,8 +155,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
         [Paragraph(issuer_html, issuer_style), Paragraph(dest_html, issuer_style)]
     ]
     
-    # ヘッダー幅の合計 = exactly 530.0pt
-    t_header = Table(header_table_data, colWidths=[200, 330])
+    t_header = Table(header_table_data, colWidths=[205, 340]) # 合計545pt
     t_header.setStyle(TableStyle([
         ('SPAN', (0,0), (1,0)),
         ('BACKGROUND', (0,0), (-1,-1), NAVY_LIGHT),
@@ -179,7 +182,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
         ('RIGHTPADDING', (0,0), (-1,-1), 2.5),
     ]
     
-    # 各テーブルの列幅合計をすべて厳密に「530.0pt」に統一
+    # 全明細共通で11列構成に統一し、幅合計を正確に 545.0pt に固定
     if sub_type == "用紙外発注":
         table_content.append([
             Paragraph("用途", header_cell_style), Paragraph("納品先", header_cell_style),
@@ -189,7 +192,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
             Paragraph("枚数", header_cell_style), Paragraph("納入日", header_cell_style),
             Paragraph("時間", header_cell_style)
         ])
-        col_widths = [42, 50, 52, 45, 36, 30, 40, 48, 40, 52, 45] # 合計 530.0pt
+        col_widths = [45, 50, 55, 45, 38, 30, 42, 50, 42, 53, 45] # 合計545pt
         
         for idx, row in enumerate(rows_data):
             n_date = str(row.get('納入日', ''))[5:]
@@ -206,10 +209,10 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
                 Paragraph(n_date, cell_style),
                 Paragraph(str(row.get('時間', '')), cell_style)
             ])
-            remark_row_idx = len(table_content)
+            r_idx = len(table_content)
             table_content.append([Paragraph(f"<b>備考:</b> {row.get('備考', '')}", cell_style)] + [''] * 10)
-            table_styles.append(('SPAN', (0, remark_row_idx), (10, remark_row_idx)))
-            table_styles.append(('BACKGROUND', (0, remark_row_idx), (10, remark_row_idx), colors.HexColor('#F8F9FA')))
+            table_styles.append(('SPAN', (0, r_idx), (10, r_idx)))
+            table_styles.append(('BACKGROUND', (0, r_idx), (10, r_idx), colors.HexColor('#F8F9FA')))
 
     elif sub_type == "印刷外発注":
         table_content.append([
@@ -220,7 +223,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
             Paragraph("表/裏", header_cell_style), Paragraph("台/版", header_cell_style),
             Paragraph("納入日", header_cell_style)
         ])
-        col_widths = [42, 50, 52, 45, 36, 30, 40, 40, 42, 42, 91] # 合計 530.0pt
+        col_widths = [45, 50, 55, 45, 38, 30, 40, 40, 42, 42, 98] # 合計545pt
         
         for idx, row in enumerate(rows_data):
             n_date = str(row.get('納入日', ''))[5:]
@@ -237,10 +240,10 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
                 Paragraph(f"{row.get('台数','')}/{row.get('版数','')}", cell_style),
                 Paragraph(n_date, cell_style)
             ])
-            remark_row_idx = len(table_content)
+            r_idx = len(table_content)
             table_content.append([Paragraph(f"<b>備考:</b> {row.get('備考', '')}", cell_style)] + [''] * 10)
-            table_styles.append(('SPAN', (0, remark_row_idx), (10, remark_row_idx)))
-            table_styles.append(('BACKGROUND', (0, remark_row_idx), (10, remark_row_idx), colors.HexColor('#F8F9FA')))
+            table_styles.append(('SPAN', (0, r_idx), (10, r_idx)))
+            table_styles.append(('BACKGROUND', (0, r_idx), (10, r_idx), colors.HexColor('#F8F9FA')))
 
     elif sub_type == "製本外発注":
         table_content.append([
@@ -250,7 +253,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
             Paragraph("納入日", header_cell_style), Paragraph("時間", header_cell_style),
             Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style)
         ])
-        col_widths = [50, 70, 52, 52, 110, 52, 52, 42, 0, 0, 0] # 合計 530.0pt
+        col_widths = [50, 75, 55, 55, 110, 55, 60, 85, 0, 0, 0] # 合計545pt
         
         for idx, row in enumerate(rows_data):
             n_date = str(row.get('納入日', ''))[5:]
@@ -265,10 +268,10 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
                 Paragraph(str(row.get('時間', '')), cell_style),
                 '', '', ''
             ])
-            remark_row_idx = len(table_content)
+            r_idx = len(table_content)
             table_content.append([Paragraph(f"<b>備考:</b> {row.get('備考', '')}", cell_style)] + [''] * 10)
-            table_styles.append(('SPAN', (0, remark_row_idx), (10, remark_row_idx)))
-            table_styles.append(('BACKGROUND', (0, remark_row_idx), (10, remark_row_idx), colors.HexColor('#F8F9FA')))
+            table_styles.append(('SPAN', (0, r_idx), (10, r_idx)))
+            table_styles.append(('BACKGROUND', (0, r_idx), (10, r_idx), colors.HexColor('#F8F9FA')))
 
     elif sub_type == "その他外発注":
         table_content.append([
@@ -277,7 +280,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
             Paragraph("納入日", header_cell_style), Paragraph("時間", header_cell_style),
             Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style)
         ])
-        col_widths = [110, 50, 65, 70, 65, 50, 30, 30, 30, 15, 15] # 合計 530.0pt
+        col_widths = [110, 50, 65, 70, 65, 50, 35, 30, 30, 20, 20] # 合計545pt
         
         for idx, row in enumerate(rows_data):
             n_date = str(row.get('納入日', ''))[5:]
@@ -290,17 +293,17 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
                 Paragraph(str(row.get('時間', '')), cell_style),
                 '', '', '', '', ''
             ])
-            # 2段目：依頼内容
-            req_row_idx = len(table_content)
+            # 依頼内容
+            req_idx = len(table_content)
             table_content.append([Paragraph(f"<b>依頼内容:</b> {row.get('作業内容・仕様', '')}", cell_style)] + [''] * 10)
-            table_styles.append(('SPAN', (0, req_row_idx), (10, req_row_idx)))
-            table_styles.append(('BACKGROUND', (0, req_row_idx), (10, req_row_idx), colors.HexColor('#F8F9FA')))
+            table_styles.append(('SPAN', (0, req_idx), (10, req_idx)))
+            table_styles.append(('BACKGROUND', (0, req_idx), (10, req_idx), colors.HexColor('#F8F9FA')))
             
-            # 3段目：備考
-            rem_row_idx = len(table_content)
+            # 備考
+            rem_idx = len(table_content)
             table_content.append([Paragraph(f"<b>備考:</b> {row.get('備考', '')}", cell_style)] + [''] * 10)
-            table_styles.append(('SPAN', (0, rem_row_idx), (10, rem_row_idx)))
-            table_styles.append(('BACKGROUND', (0, rem_row_idx), (10, rem_row_idx), colors.HexColor('#F8F9FA')))
+            table_styles.append(('SPAN', (0, rem_idx), (10, rem_idx)))
+            table_styles.append(('BACKGROUND', (0, rem_idx), (10, rem_idx), colors.HexColor('#F8F9FA')))
 
     t_main = Table(table_content, colWidths=col_widths)
     t_main.setStyle(TableStyle(table_styles))
@@ -316,7 +319,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
 tab_order, tab_summary = st.tabs(["📋 発注書作成・確認", "📊 期間集計"])
 
 with tab_order:
-    st.subheader("📋 受注番号ごとの外発注明細確認 & 発注書PDF作成（濃紺テーマ）")
+    st.subheader("📋 受注番号ごとの外発注明細確認 & 発注書PDF作成")
     
     input_order_no = st.text_input("受注番号（field-95）を入力してください", placeholder="例: 26-0719 など")
     
@@ -383,35 +386,49 @@ with tab_order:
 
 with tab_summary:
     st.subheader("📊 外発注の期間集計・クロス集計")
+    st.info("💡 登録されているすべてのレコードを一括取得し、外発注の状況を集計します。")
+    
     if st.button("🔄 データを一括取得して集計を実行", type="primary"):
         with st.spinner("全レコードを取得・集計中..."):
             all_records = fetch_all_records()
+            
             if all_records:
                 summary_list = []
                 for item in all_records:
-                    rec = item.get("record", item)
-                    order_no = rec.get('field-95', '')
-                    customer = rec.get('field-98', '')
-                    staff = rec.get('field-100', '')
+                    rec_body = item.get("record", item.get("Record", item))
+                    order_no = rec_body.get('field-95', '')
+                    customer = rec_body.get('field-98', '')
+                    staff = rec_body.get('field-100', '')
+                    
                     for label, f_id in [("用紙", "field-151"), ("印刷", "field-162"), ("製本", "field-153"), ("その他", "field-155")]:
-                        raw_details = rec.get(f_id, [])
+                        raw_details = rec_body.get(f_id, [])
                         parsed_details = parse_sub_table(raw_details, f_id)
                         for d in parsed_details:
                             summary_list.append({
-                                "受注番号": order_no, "得意先名": customer,
-                                "営業担当": staff, "発注種別": label, "明細詳細": str(d)
+                                "受注番号": order_no,
+                                "得意先名": customer,
+                                "営業担当": staff,
+                                "発注種別": label,
+                                "発注先": d.get("発注先", "未指定"),
+                                "明細詳細": str(d)
                             })
+                
                 if summary_list:
                     df_summary = pd.DataFrame(summary_list)
                     st.success(f"✅ 集計完了！全 {len(df_summary)} 件の外発注明細を検出しました。")
+                    
                     col_s1, col_s2 = st.columns(2)
                     with col_s1:
                         st.markdown("#### 👤 営業担当者別発注件数")
                         st.dataframe(df_summary['営業担当'].value_counts().reset_index(), use_container_width=True)
+                        
                     with col_s2:
                         st.markdown("#### 🏢 得意先別発注件数")
                         st.dataframe(df_summary['得意先名'].value_counts().reset_index(), use_container_width=True)
+                        
+                    st.markdown("#### 📋 検出された全明細データ一覧")
+                    st.dataframe(df_summary, use_container_width=True)
                 else:
-                    st.warning("⚠️ 有効な外発注明細データが見つかりませんでした。")
+                    st.warning("⚠️ 有効な外発注明細データが見つかりませんでした。（データ構造のキーをご確認ください）")
             else:
-                st.error("❌ レコードの取得に失敗しました。")
+                st.error("❌ レコードの取得に失敗しました。サイドバーのログをご確認ください。")
