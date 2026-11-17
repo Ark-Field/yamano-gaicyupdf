@@ -11,39 +11,16 @@ st.set_page_config(page_title="外発注管理・発注書＆期間集計ツー�
 st.title("📦 外発注管理・発注書作成 & 期間集計ツール")
 
 # ==========================================
-# @pocket認証設定 (App ID 41用)
+# @pocket認証設定 (Secretsから完全に取得)
 # ==========================================
 if "pocket" in st.secrets:
-    POCKET_API_KEY = st.secrets["pocket"].get("api_key", "XZtsg3OrDFOh0VayOI83j84Oc3YIzm7oujbI0T08")
+    POCKET_API_KEY = st.secrets["pocket"]["api_key"]
     POCKET_BASE_URL = st.secrets["pocket"].get("base_url", "https://app050.at-pocket.com/seihon01_bb")
 else:
-    POCKET_API_KEY = "XZtsg3OrDFOh0VayOI83j84Oc3YIzm7oujbI0T08"
-    POCKET_BASE_URL = "https://app050.at-pocket.com/seihon01_bb"
+    st.error("🚨 警告: secrets.toml（またはStreamlit CloudのSecrets）に [pocket] の設定が見つかりません。")
+    st.stop()
 
 APP_ID = 41  # 発注アプリのApp ID
-
-# ==========================================
-# セキュリティ：APIキーの下4桁認証ブロック
-# ==========================================
-correct_last4 = POCKET_API_KEY[-4:]
-
-st.sidebar.header("🔒 セキュリティ認証")
-user_input_last4 = st.sidebar.text_input(
-    "APIキーの下4桁を入力", 
-    type="password", 
-    max_chars=4,
-    help="シークレットに登録されているAPIキーの末尾4桁を入力してください"
-)
-
-if not user_input_last4:
-    st.warning("⚠️ 左側のサイドバーからAPIキーの下4桁を入力してください。")
-    st.stop()
-
-if user_input_last4 != correct_last4:
-    st.error("❌ APIキーの下4桁が一致しません。正しいコードを入力してください。")
-    st.stop()
-
-st.sidebar.success("✨ 認証成功（システム利用可能）")
 
 # ==========================================
 # データ取得関数
@@ -57,6 +34,8 @@ def fetch_all_records():
         if response.status_code == 200:
             result = response.json()
             return result.get("records", result.get("Data", result.get("Records", [])))
+        else:
+            st.error(f"APIエラー (ステータスコード: {response.status_code})")
     except Exception as e:
         st.error(f"API通信エラー: {e}")
     return []
@@ -90,7 +69,7 @@ tab_order, tab_summary = st.tabs(["📋 発注書作成・確認", "📊 期間�
 with tab_order:
     st.subheader("📋 受注番号ごとの外発注明細確認 & 発注書データ")
     
-    input_order_no = st.text_input("受注番号（field-95）を入力してください", placeholder="例: 2026-001 など")
+    input_order_no = st.text_input("受注番号（field-95）を入力してください", placeholder="例: 受注番号を入力")
     
     if input_order_no:
         with st.spinner(f"受注番号 {input_order_no} のデータを取得中..."):
@@ -168,18 +147,18 @@ with tab_summary:
                     customer = rec.get('field-98', '')
                     staff = rec.get('field-100', '')
                     
-                    # 各明細の件数や金額などをここで抽出して集計リストにまとめることができます
+                    # 各明細データの抽出
                     for label, f_id in [("用紙", "field-151"), ("印刷", "field-162"), ("製本", "field-153"), ("その他", "field-155")]:
                         details = rec.get(f_id, [])
                         if isinstance(details, list):
                             for d in details:
                                 summary_list.append({
-                                "受注番号": order_no,
-                                "得意先名": customer,
-                                "営業担当": staff,
-                                "発注種別": label,
-                                "明細内容": str(d)
-                            })
+                                    "受注番号": order_no,
+                                    "得意先名": customer,
+                                    "営業担当": staff,
+                                    "発注種別": label,
+                                    "明細データ": str(d)
+                                })
                 
                 if summary_list:
                     df_summary = pd.DataFrame(summary_list)
@@ -194,7 +173,7 @@ with tab_summary:
                         st.dataframe(staff_counts, use_container_width=True)
                         
                     with col_s2:
-                        st.markdown("#### 企業 得意先別発注件数")
+                        st.markdown("#### 🏢 得意先別発注件数")
                         cust_counts = df_summary['得意先名'].value_counts().reset_index()
                         cust_counts.columns = ['得意先名', '件数']
                         st.dataframe(cust_counts, use_container_width=True)
