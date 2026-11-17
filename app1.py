@@ -17,11 +17,25 @@ POCKET_API_KEY = "AfMdA3MjacXouAAhgaWFfchlwcIsCKf2ToIOl9OW"
 POCKET_BASE_URL = "https://app050.at-pocket.com/seihon01_bb"
 APP_ID = 41  # 発注アプリのApp ID
 
-st.sidebar.success("🔑 APIキー設定完了")
+st.sidebar.success("🔑 APIキー設定完了 (App ID: 41)")
 
 # ==========================================
-# データ取得関数
+# データ取得 & パース関数
 # ==========================================
+def parse_sub_table(sub_list):
+    """サブテーブルの入れ子構造（recordSubId と record）をフラットな辞書リストに変換する"""
+    flattened = []
+    if isinstance(sub_list, list):
+        for item in sub_list:
+            if isinstance(item, dict):
+                sub_id = item.get("recordSubId", "")
+                rec_inner = item.get("record", {})
+                row_data = {"recordSubId": sub_id}
+                if isinstance(rec_inner, dict):
+                    row_data.update(rec_inner)
+                flattened.append(row_data)
+    return flattened
+
 @st.cache_data(ttl=60)
 def fetch_all_records():
     url = f"{POCKET_BASE_URL}/api/apps/{APP_ID}/records"
@@ -66,7 +80,7 @@ tab_order, tab_summary = st.tabs(["📋 発注書作成・確認", "📊 期間�
 with tab_order:
     st.subheader("📋 受注番号ごとの外発注明細確認 & 発注書データ")
     
-    input_order_no = st.text_input("受注番号（field-95）を入力してください", placeholder="例: 受注番号を入力")
+    input_order_no = st.text_input("受注番号（field-95）を入力してください", placeholder="例: 26-0719 など")
     
     if input_order_no:
         with st.spinner(f"受注番号 {input_order_no} のデータを取得中..."):
@@ -88,6 +102,7 @@ with tab_order:
             st.markdown("---")
             st.markdown("### 📦 外発注明細テーブル一覧")
             
+            # 4つの明細テーブル定義
             sub_tables = {
                 "用紙外発注 (field-151)": "field-151",
                 "印刷外発注 (field-162)": "field-162",
@@ -98,12 +113,14 @@ with tab_order:
             selected_table_name = st.selectbox("確認・出力する発注種別を選択", list(sub_tables.keys()))
             target_field_id = sub_tables[selected_table_name]
             
-            sub_data = rec.get(target_field_id, [])
+            raw_sub_data = rec.get(target_field_id, [])
+            parsed_sub_data = parse_sub_table(raw_sub_data)
             
-            if sub_data and isinstance(sub_data, list):
-                df_sub = pd.DataFrame(sub_data)
+            if parsed_sub_data:
+                df_sub = pd.DataFrame(parsed_sub_data)
                 st.dataframe(df_sub, use_container_width=True)
                 
+                # Excelダウンロード機能
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     df_sub.to_excel(writer, index=False, sheet_name='外発注明細')
@@ -143,16 +160,16 @@ with tab_summary:
                     staff = rec.get('field-100', '')
                     
                     for label, f_id in [("用紙", "field-151"), ("印刷", "field-162"), ("製本", "field-153"), ("その他", "field-155")]:
-                        details = rec.get(f_id, [])
-                        if isinstance(details, list):
-                            for d in details:
-                                summary_list.append({
-                                    "受注番号": order_no,
-                                    "得意先名": customer,
-                                    "営業担当": staff,
-                                    "発注種別": label,
-                                    "明細データ": str(d)
-                                })
+                        raw_details = rec.get(f_id, [])
+                        parsed_details = parse_sub_table(raw_details)
+                        for d in parsed_details:
+                            summary_list.append({
+                                "受注番号": order_no,
+                                "得意先名": customer,
+                                "営業担当": staff,
+                                "発注種別": label,
+                                "明細詳細": str(d)
+                            })
                 
                 if summary_list:
                     df_summary = pd.DataFrame(summary_list)
