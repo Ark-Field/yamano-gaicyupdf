@@ -76,13 +76,9 @@ def parse_sub_table(sub_list, target_field_id):
     return flattened
 
 def fetch_records_with_date_query(start_d, end_d, limit_count=500):
-    """
-    指定された期間（更新日ベース等）をサーバー側でクエリ検索し、タイムアウトを回避して取得する
-    """
     url = f"{POCKET_BASE_URL}/api/apps/{APP_ID}/records"
     headers = {"X-At-Pocket-API-Key": POCKET_API_KEY, "Accept": "application/json"}
     
-    # サーバー負荷とタイムアウトを防ぐため、指定期間にマッチする更新日クエリを付与
     query_parts = []
     if start_d:
         query_parts.append(f'updatedAt >= "{start_d} 00:00:00"')
@@ -102,7 +98,6 @@ def fetch_records_with_date_query(start_d, end_d, limit_count=500):
             result = response.json()
             return result.get("records", result.get("Data", result.get("Records", [])))
         else:
-            # クエリ未対応時のフォールバック（件数を絞って安全に取得）
             params_fallback = {"sort": "-recordId", "limit": 200}
             response_fb = requests.get(url, headers=headers, params=params_fallback, timeout=35)
             if response_fb.status_code == 200:
@@ -129,6 +124,27 @@ def fetch_record_by_order(order_no):
     except Exception as e:
         st.error(f"API通信エラー: {e}")
     return None
+
+def generate_excel_download(lists_by_type, start_str, end_str):
+    """
+    用紙・印刷・製本・その他のデータをシートごとに分けてExcelファイル（bytes）を生成する
+    """
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        has_data = False
+        for type_name, rows in lists_by_type.items():
+            if rows:
+                df = pd.DataFrame(rows)
+                df.to_excel(writer, sheet_name=type_name, index=False)
+                has_data = True
+            else:
+                # データがない場合も空のシートを作成
+                df = pd.DataFrame(columns=["メッセージ"])
+                df.loc[0] = ["該当データなし"]
+                df.to_excel(writer, sheet_name=type_name, index=False)
+                
+    output.seek(0)
+    return output.getvalue()
 
 # ==========================================
 # PDF生成関数 (A5横サイズ)
@@ -405,11 +421,10 @@ with tab_summary:
         run_summary = st.button("🔄 「計上済」データを集計実行", type="primary")
         
     if run_summary:
-        with st.spinner("サーバーからデータを取得・集計中（タイムアウト対策適用中）..."):
+        with st.spinner("サーバーからデータを取得・集計中..."):
             start_str = start_date.strftime("%Y-%m-%d") if start_date else None
             end_str = end_date.strftime("%Y-%m-%d") if end_date else None
             
-            # クエリ検索でスムーズに取得（最大500件）
             all_records = fetch_records_with_date_query(start_d=start_str, end_d=end_str, limit_count=500)
             
             if all_records:
@@ -430,7 +445,6 @@ with tab_summary:
                 for item in all_records:
                     rec = item.get("record", item)
                     
-                    # 進捗区分 field-114 が「計上済」であることのチェック
                     progress_status = rec.get('field-114', '')
                     is_keijou = False
                     if isinstance(progress_status, list):
@@ -452,7 +466,6 @@ with tab_summary:
                         for d in parsed_details:
                             delivery_date_str = d.get("納入日", "")
                             
-                            # 納入日の期間判定
                             if start_date or end_date:
                                 if not delivery_date_str:
                                     continue
@@ -511,6 +524,18 @@ with tab_summary:
                                 })
                                 
                             lists_by_type[label].append(base_row)
+                
+                # 📥 Excel一括ダウンロードボタンの配置
+                st.markdown("---")
+                excel_bytes = generate_excel_download(lists_by_type, start_str, end_str)
+                st.download_button(
+                    label="📥 【計上済・期間集計】全明細Excelファイル一括ダウンロード (.xlsx)",
+                    data=excel_bytes,
+                    file_name=f"外発注集計_{start_str}〜{end_str}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary"
+                )
+                st.markdown("---")
                 
                 t_paper, t_print, t_book, t_other = st.tabs(["📄 用紙外発注", "🖨️ 印刷外発注", "📚 製本外発注", "📦 その他外発注"])
                 
