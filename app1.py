@@ -3,6 +3,7 @@ import io
 import requests
 import pandas as pd
 import streamlit as st
+from datetime import date, datetime
 from reportlab.lib.pagesizes import landscape, A5
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -106,11 +107,10 @@ def fetch_record_by_order(order_no):
     return None
 
 # ==========================================
-# PDF生成関数 (A5横サイズ・濃紺テーマ・安全幅設計)
+# PDF生成関数 (A5横サイズ)
 # ==========================================
 def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
     buffer = io.BytesIO()
-    # A5横サイズ (width=595.27, 左右マージン20pt -> 描画可能幅=555.27pt)
     doc = SimpleDocTemplate(buffer, pagesize=landscape(A5), leftMargin=20, rightMargin=20, topMargin=20, bottomMargin=20)
     
     font_path = "NotoSansJP-Regular.ttf"
@@ -151,7 +151,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
         [Paragraph(issuer_html, issuer_style), Paragraph(dest_html, issuer_style)]
     ]
     
-    t_header = Table(header_table_data, colWidths=[215, 340]) # 合計555pt
+    t_header = Table(header_table_data, colWidths=[215, 340])
     t_header.setStyle(TableStyle([
         ('SPAN', (0,0), (1,0)),
         ('BACKGROUND', (0,0), (-1,-1), NAVY_LIGHT),
@@ -175,7 +175,6 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
         ('BOTTOMPADDING', (0,0), (-1,-1), 3),
     ]
     
-    # 共通11列構成・合計幅555pt
     col_widths = [48, 52, 55, 48, 42, 38, 45, 52, 45, 55, 55]
     
     if sub_type == "用紙外発注":
@@ -280,13 +279,11 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
                 Paragraph(str(row.get('時間', '')), cell_style),
                 '', '', '', '', ''
             ])
-            # 依頼内容
             req_idx = len(table_content)
             table_content.append([Paragraph(f"<b>依頼内容:</b> {row.get('作業内容・仕様', '')}", cell_style)] + [''] * 10)
             table_styles.append(('SPAN', (0, req_idx), (10, req_idx)))
             table_styles.append(('BACKGROUND', (0, req_idx), (10, req_idx), colors.HexColor('#F8F9FA')))
             
-            # 備考
             rem_idx = len(table_content)
             table_content.append([Paragraph(f"<b>備考:</b> {row.get('備考', '')}", cell_style)] + [''] * 10)
             table_styles.append(('SPAN', (0, rem_idx), (10, rem_idx)))
@@ -373,7 +370,19 @@ with tab_order:
 
 with tab_summary:
     st.subheader("📊 外発注の期間集計・クロス集計")
-    if st.button("🔄 データを一括取得して集計を実行", type="primary"):
+    st.info("💡 全件データを取得し、納入日などの日付範囲で絞り込んで集計できます。")
+    
+    # 📅 日付フィルター用の入力コントロール
+    col_f1, col_f2, col_f3 = st.columns([2, 2, 3])
+    with col_f1:
+        start_date = st.date_input("開始日（納入日基準）", value=None)
+    with col_f2:
+        end_date = st.date_input("終了日（納入日基準）", value=None)
+    with col_f3:
+        st.markdown("<br>", unsafe_allow_html=True)
+        run_summary = st.button("🔄 データを一括取得して集計を実行", type="primary")
+        
+    if run_summary:
         with st.spinner("全レコードを取得・集計中..."):
             all_records = fetch_all_records()
             if all_records:
@@ -383,17 +392,41 @@ with tab_summary:
                     order_no = rec.get('field-95', '')
                     customer = rec.get('field-98', '')
                     staff = rec.get('field-100', '')
+                    
                     for label, f_id in [("用紙", "field-151"), ("印刷", "field-162"), ("製本", "field-153"), ("その他", "field-155")]:
                         raw_details = rec.get(f_id, [])
                         parsed_details = parse_sub_table(raw_details, f_id)
                         for d in parsed_details:
+                            # 納入日の取得と日付フィルタリング
+                            delivery_date_str = d.get("納入日", "")
+                            
+                            # 日付範囲フィルターの適用チェック
+                            if start_date or end_date:
+                                if not delivery_date_str:
+                                    continue # 納入日が空のものはスキップ
+                                try:
+                                    d_date = datetime.strptime(str(delivery_date_str)[:10], "%Y-%m-%d").date()
+                                    if start_date and d_date < start_date:
+                                        continue
+                                    if end_date and d_date > end_date:
+                                        continue
+                                except ValueError:
+                                    pass # パースできない形式はそのまま通すかスキップ
+                                    
                             summary_list.append({
-                                "受注番号": order_no, "得意先名": customer,
-                                "営業担当": staff, "発注種別": label, "明細詳細": str(d)
+                                "受注番号": order_no,
+                                "得意先名": customer,
+                                "営業担当": staff,
+                                "発注種別": label,
+                                "発注先": d.get("発注先", "未指定"),
+                                "納入日": delivery_date_str,
+                                "明細詳細": str(d)
                             })
+                
                 if summary_list:
                     df_summary = pd.DataFrame(summary_list)
-                    st.success(f"✅ 集計完了！全 {len(df_summary)} 件の外発注明細を検出しました。")
+                    st.success(f"✅ 集計完了！条件に一致する全 {len(df_summary)} 件の外発注明細を検出しました。")
+                    
                     col_s1, col_s2 = st.columns(2)
                     with col_s1:
                         st.markdown("#### 👤 営業担当者別発注件数")
@@ -401,7 +434,10 @@ with tab_summary:
                     with col_s2:
                         st.markdown("#### 🏢 得意先別発注件数")
                         st.dataframe(df_summary['得意先名'].value_counts().reset_index(), use_container_width=True)
+                        
+                    st.markdown("#### 📋 検出された全明細データ一覧")
+                    st.dataframe(df_summary, use_container_width=True)
                 else:
-                    st.warning("⚠️ 有効な外発注明細データが見つかりませんでした。")
+                    st.warning("⚠️ 指定した条件（期間）に一致する外発注明細データが見つかりませんでした。")
             else:
                 st.error("❌ レコードの取得に失敗しました。")
