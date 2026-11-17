@@ -18,10 +18,17 @@ st.set_page_config(page_title="外発注管理・発注書＆期間集計ツー�
 st.title("📦 外発注管理・発注書作成 & 分割期間集計ツール")
 
 # ==========================================
-# 🔐 パスワード認証チェック（ログイン画面）
+# 🔐 認証チェック（URLパラメータからのアクセスの場合は自動バイパス）
 # ==========================================
+query_params = st.query_params
+url_order_no = query_params.get("ord", "")
+
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
+
+# @pocketのボタン等からURLパラメータ（ord）付きで飛んできた場合は認証を自動通過
+if url_order_no:
+    st.session_state.authenticated = True
 
 if not st.session_state.authenticated:
     st.subheader("🔒 ログイン認証が必要です")
@@ -373,7 +380,12 @@ tab_order, tab_summary = st.tabs(["📋 発注書作成・確認", "📊 分割�
 with tab_order:
     st.subheader("📋 受注番号ごとの外発注明細確認 & 発注書PDF作成")
     
-    input_order_no = st.text_input("受注番号（field-95）を入力してください", placeholder="例: 26-0719 など")
+    # URLクエリパラメータから受け取った受注番号を初期値にセット
+    input_order_no = st.text_input(
+        "受注番号（field-95）を入力してください", 
+        value=url_order_no,
+        placeholder="例: 26-0719 など"
+    )
     
     if input_order_no:
         with st.spinner(f"受注番号 {input_order_no} のデータを取得中..."):
