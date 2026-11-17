@@ -8,7 +8,7 @@ import streamlit as st
 # ページ基本設定
 # ==========================================
 st.set_page_config(page_title="外発注管理・発注書＆期間集計ツール", layout="wide")
-st.title("📦 外発注管理・発注書作成 & 期間集計ツール")
+st.title("📦 外発注管理・発注書作成 & 期間集計ツール（項目名自動取得版）")
 
 # ==========================================
 # @pocket認証設定 (ベタ打ちテスト版)
@@ -20,17 +20,38 @@ APP_ID = 41  # 発注アプリのApp ID
 st.sidebar.success("🔑 APIキー設定完了 (App ID: 41)")
 
 # ==========================================
+# アプリ定義（フィールドスキーマ）の取得関数
+# ==========================================
+@st.cache_data(ttl=300)
+def fetch_app_schema():
+    """
+    @pocketのアプリ定義（フィールド名とラベルの対応）を取得する関数
+    ※APIのエンドポイント構造に合わせてURLを調整しています
+    """
+    url = f"{POCKET_BASE_URL}/api/apps/{APP_ID}"
+    headers = {"X-At-Pocket-API-Key": POCKET_API_KEY, "Accept": "application/json"}
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            result = response.json()
+            # アプリ定義内のフィールド一覧構造を探索
+            return result.get("app", result.get("fields", result.get("Data", {})))
+    except Exception as e:
+        pass
+    return {}
+
+# ==========================================
 # データ取得 & パース関数
 # ==========================================
 def parse_sub_table(sub_list):
-    """サブテーブルの入れ子構造（recordSubId と record）をフラットな辞書リストに変換する"""
+    """サブテーブルの入れ子構造をフラットな辞書リストに変換する"""
     flattened = []
     if isinstance(sub_list, list):
         for item in sub_list:
             if isinstance(item, dict):
                 sub_id = item.get("recordSubId", "")
                 rec_inner = item.get("record", {})
-                row_data = {"recordSubId": sub_id}
+                row_data = {"明細ID": sub_id}
                 if isinstance(rec_inner, dict):
                     row_data.update(rec_inner)
                 flattened.append(row_data)
@@ -45,8 +66,6 @@ def fetch_all_records():
         if response.status_code == 200:
             result = response.json()
             return result.get("records", result.get("Data", result.get("Records", [])))
-        else:
-            st.error(f"APIエラー: {response.text}")
     except Exception as e:
         st.error(f"API通信エラー: {e}")
     return []
@@ -72,7 +91,7 @@ def fetch_record_by_order(order_no):
 # ==========================================
 # タブ構成
 # ==========================================
-tab_order, tab_summary = st.tabs(["📋 発注書作成・確認", "📊 期間集計"])
+tab_order, tab_summary, tab_schema = st.tabs(["📋 発注書作成・確認", "📊 期間集計", "⚙️ アプリ定義確認"])
 
 # ------------------------------------------
 # タブ1: 発注書作成・確認
@@ -102,7 +121,6 @@ with tab_order:
             st.markdown("---")
             st.markdown("### 📦 外発注明細テーブル一覧")
             
-            # 4つの明細テーブル定義
             sub_tables = {
                 "用紙外発注 (field-151)": "field-151",
                 "印刷外発注 (field-162)": "field-162",
@@ -194,3 +212,19 @@ with tab_summary:
                     st.warning("⚠️ 有効な外発注明細データが見つかりませんでした。")
             else:
                 st.error("❌ レコードの取得に失敗しました。")
+
+# ------------------------------------------
+# タブ3: アプリ定義確認（スキーマ確認用）
+# ------------------------------------------
+with tab_schema:
+    st.subheader("⚙️ @pocket アプリ定義（フィールド構造）の確認")
+    st.info("💡 @pocket側から返却されるアプリのメタデータやフィールド構成を確認するための診断タブです。")
+    
+    if st.button("🔍 アプリ定義情報を取得して表示", type="secondary"):
+        with st.spinner("アプリ定義を取得中..."):
+            schema_data = fetch_app_schema()
+            if schema_data:
+                st.success("✅ アプリ定義の取得に成功しました！")
+                st.json(schema_data)
+            else:
+                st.warning("⚠️ アプリ定義の取得に失敗したか、専用のエンドポイントが公開されていない可能性があります。")
