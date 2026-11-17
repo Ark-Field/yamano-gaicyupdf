@@ -15,7 +15,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 # ページ基本設定
 # ==========================================
 st.set_page_config(page_title="外発注管理・発注書＆期間集計ツール", layout="wide")
-st.title("📦 外発注管理・発注書作成 & 期間集計ツール")
+st.title("📦 外発注管理・発注書作成 & 分割期間集計ツール")
 
 # ==========================================
 # @pocket認証設定 (ベタ打ちテスト版)
@@ -30,14 +30,14 @@ st.sidebar.success("🔑 APIキー設定完了 (App ID: 41)")
 # 項目名（日本語ラベル）のマッピング辞書
 # ==========================================
 LABEL_MAPPINGS = {
-    "field-151": {
+    "field-151": { # 用紙外発注
         "field-151_1": "用途", "field-151_22": "納品先", "field-151_2": "用紙銘柄",
         "field-151_25": "原紙サイズ", "field-151_4": "斤量", "field-151_3": "目",
         "field-151_20": "全判紙数", "field-151_26": "断裁後サイズ", "field-151_35": "納入枚数",
         "field-151_17": "納入日", "field-151_23": "時間", "field-151_24": "備考",
         "field-151_18": "発注先", "field-151_16": "発注者",
     },
-    "field-162": {
+    "field-162": { # 印刷外発注
         "field-162_19": "用途", "field-162_17": "納品先", "field-162_1": "用紙銘柄",
         "field-162_2": "印刷サイズ", "field-162_21": "斤量", "field-162_20": "目",
         "field-162_6": "通数", "field-162_7": "頁数", "field-162_9": "色表",
@@ -45,13 +45,13 @@ LABEL_MAPPINGS = {
         "field-162_13": "納入日", "field-162_18": "時間", "field-162_16": "備考",
         "field-162_5": "発注先", "field-162_14": "発注者",
     },
-    "field-153": {
+    "field-153": { # 製本外発注
         "field-153_1": "用途", "field-153_31": "納品先", "field-153_33": "製本",
         "field-153_34": "加工", "field-153_29": "詳細", "field-153_8": "部数",
         "field-153_26": "納入日", "field-153_32": "時間", "field-153_12": "備考",
         "field-153_27": "発注先", "field-153_9": "発注者"
     },
-    "field-155": {
+    "field-155": { # その他外発注
         "field-155_6": "発注先", "field-155_10": "納品先", "field-155_7": "数量",
         "field-155_3": "仕入単価", "field-155_9": "合計金額", "field-155_4": "納入日",
         "field-155_8": "時間", "field-155_1": "作業内容・仕様", "field-155_11": "備考",
@@ -75,34 +75,18 @@ def parse_sub_table(sub_list, target_field_id):
                 flattened.append(row_data)
     return flattened
 
-def fetch_records_with_query(start_d=None, end_d=None, limit_count=500):
+def fetch_records_with_query(limit_count=500):
     url = f"{POCKET_BASE_URL}/api/apps/{APP_ID}/records"
     headers = {"X-At-Pocket-API-Key": POCKET_API_KEY, "Accept": "application/json"}
-    
-    query_parts = []
-    if start_d:
-        query_parts.append(f'updatedAt >= "{start_d} 00:00:00"')
-    if end_d:
-        query_parts.append(f'updatedAt <= "{end_d} 23:59:59"')
-        
     params = {
         "sort": "-recordId",
         "limit": limit_count
     }
-    if query_parts:
-        params["query"] = " and ".join(query_parts)
-
     try:
         response = requests.get(url, headers=headers, params=params, timeout=30)
         if response.status_code == 200:
             result = response.json()
             return result.get("records", result.get("Data", result.get("Records", [])))
-        else:
-            params_fallback = {"sort": "-recordId", "limit": limit_count}
-            response_fb = requests.get(url, headers=headers, params=params_fallback, timeout=30)
-            if response_fb.status_code == 200:
-                res_data = response_fb.json()
-                return res_data.get("records", res_data.get("Data", res_data.get("Records", [])))
     except Exception as e:
         st.error(f"API通信エラー: {e}")
     return []
@@ -147,15 +131,13 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
     cell_style = ParagraphStyle('CellStyle', fontName=font_name, fontSize=7.5, leading=9.5, textColor=TEXT_DARK)
     header_cell_style = ParagraphStyle('HeaderCellStyle', fontName=font_name, fontSize=7.5, leading=9.5, textColor=colors.white)
     issuer_style = ParagraphStyle('IssuerStyle', fontName=font_name, fontSize=7.5, leading=10, textColor=TEXT_DARK)
-    date_style = ParagraphStyle('DateStyle', fontName=font_name, fontSize=8, leading=10, textColor=TEXT_DARK, alignment=2) # 右寄せ
+    date_style = ParagraphStyle('DateStyle', fontName=font_name, fontSize=8, leading=10, textColor=TEXT_DARK, alignment=2)
     
     story = []
     
     order_no = rec.get('field-95', '')
     customer = rec.get('field-98', '')
     staff_name = rows_data[0].get('発注者', rec.get('field-100', '')) if rows_data else rec.get('field-100', '')
-    
-    # 当日の日付を取得（例: 2026年11月18日）
     today_str = date.today().strftime("%Y年%m月%d日")
     
     issuer_html = (
@@ -323,7 +305,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
 # ==========================================
 # タブ構成
 # ==========================================
-tab_order, tab_summary = st.tabs(["📋 発注書作成・確認", "📊 期間集計"])
+tab_order, tab_summary = st.tabs(["📋 発注書作成・確認", "📊 分割期間集計（計上済）"])
 
 with tab_order:
     st.subheader("📋 受注番号ごとの外発注明細確認 & 発注書PDF作成")
@@ -367,7 +349,6 @@ with tab_order:
                         sup = row.get(supplier_key, "")
                         if not sup or sup in ["未指定発注先", "未指定", "未定"]:
                             continue
-                            
                         if sup not in suppliers:
                             suppliers[sup] = []
                         suppliers[sup].append(row)
@@ -386,82 +367,164 @@ with tab_order:
                         )
             if not has_supplier_data:
                 st.info("ℹ️ この受注番号には有効な発注先が指定された外発注明細データが登録されていません。")
-                
-            with st.expander("🔍 このレコードの生JSONデータ構造を確認"):
-                st.json(record_data)
         else:
             st.error(f"❌ 受注番号「{input_order_no}」に一致するレコードが見つかりませんでした。")
 
 with tab_summary:
-    st.subheader("📊 外発注の期間集計・クロス集計")
-    st.info("💡 指定した期間（開始日〜終了日）のデータを新着順に最大500件まで効率よく取得して集計します。")
+    st.subheader("📊 外発注の分割期間集計（進捗区分：計上済）")
+    st.info("💡 進捗区分（`field-114`）が**「計上済」**であり、各明細の**納入日**が指定期間内のデータを「用紙」「印刷」「製本」「その他」別に集計します。")
     
     col_f1, col_f2, col_f3 = st.columns([2, 2, 3])
     with col_f1:
-        start_date = st.date_input("開始日", value=date.today().replace(day=1))
+        start_date = st.date_input("開始日（納入日基準）", value=date.today().replace(day=1))
     with col_f2:
-        end_date = st.date_input("終了日", value=date.today())
+        end_date = st.date_input("終了日（納入日基準）", value=date.today())
     with col_f3:
         st.markdown("<br>", unsafe_allow_html=True)
-        run_summary = st.button("🔄 指定期間のデータを取得して集計を実行", type="primary")
+        run_summary = st.button("🔄 「計上済」データを集計実行", type="primary")
         
     if run_summary:
-        with st.spinner("サーバーからデータを取得・集計中..."):
-            start_str = start_date.strftime("%Y-%m-%d") if start_date else None
-            end_str = end_date.strftime("%Y-%m-%d") if end_date else None
-            
-            all_records = fetch_records_with_query(start_d=start_str, end_d=end_str, limit_count=500)
+        with st.spinner("対象データを取得・集計中..."):
+            all_records = fetch_records_with_query(limit_count=500)
             
             if all_records:
-                summary_list = []
+                # 分類別のリストを用意
+                lists_by_type = {
+                    "用紙": [],
+                    "印刷": [],
+                    "製本": [],
+                    "その他": []
+                }
+                
+                target_map = [
+                    ("用紙", "field-151"),
+                    ("印刷", "field-162"),
+                    ("製本", "field-153"),
+                    ("その他", "field-155")
+                ]
+                
                 for item in all_records:
                     rec = item.get("record", item)
+                    
+                    # ③ 進捗区分 field-114 が「計上済」であることのチェック
+                    progress_status = rec.get('field-114', '')
+                    # チェックボックスや文字列型に対応（リスト形式や文字列形式を想定）
+                    is_keijou = False
+                    if isinstance(progress_status, list):
+                        if "計上済" in progress_status:
+                            is_keijou = True
+                    elif str(progress_status).strip() == "計上済":
+                        is_keijou = True
+                    
+                    if not is_keijou:
+                        continue # 計上済でなければスキップ
+                        
                     order_no = rec.get('field-95', '')
                     customer = rec.get('field-98', '')
                     staff = rec.get('field-100', '')
                     
-                    for label, f_id in [("用紙", "field-151"), ("印刷", "field-162"), ("製本", "field-153"), ("その他", "field-155")]:
+                    for label, f_id in target_map:
                         raw_details = rec.get(f_id, [])
                         parsed_details = parse_sub_table(raw_details, f_id)
                         for d in parsed_details:
                             delivery_date_str = d.get("納入日", "")
                             
+                            # 納入日の期間判定
                             if start_date or end_date:
-                                if delivery_date_str:
-                                    try:
-                                        d_date = datetime.strptime(str(delivery_date_str)[:10], "%Y-%m-%d").date()
-                                        if start_date and d_date < start_date:
-                                            continue
-                                        if end_date and d_date > end_date:
-                                            continue
-                                    except ValueError:
-                                        pass
-                                        
-                            summary_list.append({
+                                if not delivery_date_str:
+                                    continue
+                                try:
+                                    d_date = datetime.strptime(str(delivery_date_str)[:10], "%Y-%m-%d").date()
+                                    if start_date and d_date < start_date:
+                                        continue
+                                    if end_date and d_date > end_date:
+                                        continue
+                                except ValueError:
+                                    continue
+                            
+                            supplier = d.get("発注先", "未指定")
+                            if not supplier or supplier in ["未指定発注先", "未指定", "未定"]:
+                                supplier = "未指定"
+                                
+                            # ① 発注書PDFと全く同じ項目（カラム）構造になるよう整理したベースデータ
+                            base_row = {
                                 "受注番号": order_no,
                                 "得意先名": customer,
                                 "営業担当": staff,
-                                "発注種別": label,
-                                "発注先": d.get("発注先", "未指定"),
+                                "発注先": supplier,
                                 "納入日": delivery_date_str,
-                                "明細詳細": str(d)
-                            })
+                            }
+                            
+                            # 種別ごとの詳細項目の追加
+                            if label == "用紙":
+                                base_row.update({
+                                    "用途": d.get("用途", ""), "納品先": d.get("納品先", ""),
+                                    "用紙銘柄": d.get("用紙銘柄", ""), "原紙サイズ": d.get("原紙サイズ", ""),
+                                    "斤量": d.get("斤量", ""), "目": d.get("目", ""),
+                                    "全判紙数": d.get("全判紙数", ""), "断裁後サイズ": d.get("断裁後サイズ", ""),
+                                    "納入枚数": d.get("納入枚数", ""), "時間": d.get("時間", ""), "備考": d.get("備考", "")
+                                })
+                            elif label == "印刷":
+                                base_row.update({
+                                    "用途": d.get("用途", ""), "納品先": d.get("納品先", ""),
+                                    "用紙銘柄": d.get("用紙銘柄", ""), "印刷サイズ": d.get("印刷サイズ", ""),
+                                    "斤量": d.get("斤量", ""), "目": d.get("目", ""),
+                                    "通数": d.get("通数", ""), "頁数": d.get("頁数", ""),
+                                    "色表": d.get("色表", ""), "色裏": d.get("色裏", ""),
+                                    "台数": d.get("台数", ""), "版数": d.get("版数", ""),
+                                    "時間": d.get("時間", ""), "備考": d.get("備考", "")
+                                })
+                            elif label == "製本":
+                                base_row.update({
+                                    "用途": d.get("用途", ""), "納品先": d.get("納品先", ""),
+                                    "製本": d.get("製本", ""), "加工": d.get("加工", ""),
+                                    "詳細": d.get("詳細", ""), "部数": d.get("部数", ""),
+                                    "時間": d.get("時間", ""), "備考": d.get("備考", "")
+                                })
+                            elif label == "その他":
+                                base_row.update({
+                                    "納品先": d.get("納品先", ""), "数量": d.get("数量", ""),
+                                    "仕入単価": d.get("仕入単価", ""), "合計金額": d.get("合計金額", ""),
+                                    "時間": d.get("時間", ""), "作業内容・仕様": d.get("作業内容・仕様", ""),
+                                    "備考": d.get("備考", "")
+                                })
+                                
+                            lists_by_type[label].append(base_row)
                 
-                if summary_list:
-                    df_summary = pd.DataFrame(summary_list)
-                    st.success(f"✅ 集計完了！条件に一致する全 {len(df_summary)} 件の外発注明細を検出しました。")
-                    
-                    col_s1, col_s2 = st.columns(2)
-                    with col_s1:
-                        st.markdown("#### 👤 営業担当者別発注件数")
-                        st.dataframe(df_summary['営業担当'].value_counts().reset_index(), use_container_width=True)
-                    with col_s2:
-                        st.markdown("#### 🏢 得意先別発注件数")
-                        st.dataframe(df_summary['得意先名'].value_counts().reset_index(), use_container_width=True)
+                # ② 用紙・印刷・製本・その他で別々にタブ（またはセクション）表示
+                t_paper, t_print, t_book, t_other = st.tabs(["📄 用紙外発注", "🖨️ 印刷外発注", "📚 製本外発注", "📦 その他外発注"])
+                
+                with t_paper:
+                    df_p = pd.DataFrame(lists_by_type["用紙"])
+                    if not df_p.empty:
+                        st.success(f"用紙外発注: {len(df_p)}件")
+                        st.dataframe(df_p, use_container_width=True)
+                    else:
+                        st.info("該当する用紙外発注データはありません。")
                         
-                    st.markdown("#### 📋 検出された全明細データ一覧")
-                    st.dataframe(df_summary, use_container_width=True)
-                else:
-                    st.warning("⚠️ 指定した期間内に有効な外発注明細データが見つかりませんでした。")
+                with t_print:
+                    df_pr = pd.DataFrame(lists_by_type["印刷"])
+                    if not df_pr.empty:
+                        st.success(f"印刷外発注: {len(df_pr)}件")
+                        st.dataframe(df_pr, use_container_width=True)
+                    else:
+                        st.info("該当する印刷外発注データはありません。")
+                        
+                with t_book:
+                    df_b = pd.DataFrame(lists_by_type["製本"])
+                    if not df_b.empty:
+                        st.success(f"製本外発注: {len(df_b)}件")
+                        st.dataframe(df_b, use_container_width=True)
+                    else:
+                        st.info("該当する製本外発注データはありません。")
+                        
+                with t_other:
+                    df_o = pd.DataFrame(lists_by_type["その他"])
+                    if not df_o.empty:
+                        st.success(f"その他外発注: {len(df_o)}件")
+                        st.dataframe(df_o, use_container_width=True)
+                    else:
+                        st.info("該当するその他外発注データはありません。")
+                        
             else:
-                st.error("❌ レコードの取得に失敗しました。APIの接続状態をご確認ください。")
+                st.error("❌ レコードの取得に失敗しました。")
