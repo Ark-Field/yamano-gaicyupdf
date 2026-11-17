@@ -18,13 +18,17 @@ st.set_page_config(page_title="外発注管理・発注書＆期間集計ツー�
 st.title("📦 外発注管理・発注書作成 & 分割期間集計ツール")
 
 # ==========================================
-# @pocket認証設定 (ベタ打ちテスト版)
+# @pocket認証設定 (Streamlit Secretsから読み込み)
 # ==========================================
-POCKET_API_KEY = "AfMdA3MjacXouAAhgaWFfchlwcIsCKf2ToIOl9OW"
+try:
+    POCKET_API_KEY = st.secrets["POCKET_API_KEY"]
+    st.sidebar.success("🔑 APIキー設定完了 (Secretsから読込)")
+except Exception:
+    POCKET_API_KEY = ""
+    st.sidebar.error("⚠️ Secretsに `POCKET_API_KEY` が設定されていません。")
+
 POCKET_BASE_URL = "https://app050.at-pocket.com/seihon01_bb"
 APP_ID = 41  # 発注アプリのApp ID
-
-st.sidebar.success("🔑 APIキー設定完了 (App ID: 41)")
 
 # ==========================================
 # 項目名（日本語ラベル）のマッピング辞書
@@ -126,23 +130,16 @@ def fetch_record_by_order(order_no):
     return None
 
 def generate_excel_download(lists_by_type, start_str, end_str):
-    """
-    用紙・印刷・製本・その他のデータをシートごとに分けてExcelファイル（bytes）を生成する
-    """
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        has_data = False
         for type_name, rows in lists_by_type.items():
             if rows:
                 df = pd.DataFrame(rows)
                 df.to_excel(writer, sheet_name=type_name, index=False)
-                has_data = True
             else:
-                # データがない場合も空のシートを作成
                 df = pd.DataFrame(columns=["メッセージ"])
                 df.loc[0] = ["該当データなし"]
                 df.to_excel(writer, sheet_name=type_name, index=False)
-                
     output.seek(0)
     return output.getvalue()
 
@@ -525,7 +522,6 @@ with tab_summary:
                                 
                             lists_by_type[label].append(base_row)
                 
-                # 📥 Excel一括ダウンロードボタンの配置
                 st.markdown("---")
                 excel_bytes = generate_excel_download(lists_by_type, start_str, end_str)
                 st.download_button(
