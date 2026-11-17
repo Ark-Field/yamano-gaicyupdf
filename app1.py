@@ -76,13 +76,9 @@ def parse_sub_table(sub_list, target_field_id):
     return flattened
 
 def fetch_records_with_query(start_d=None, end_d=None, limit_count=500):
-    """
-    タイムアウトと1000件の壁を防ぐため、指定期間のクエリをかけて新しい順（降順）で取得する
-    """
     url = f"{POCKET_BASE_URL}/api/apps/{APP_ID}/records"
     headers = {"X-At-Pocket-API-Key": POCKET_API_KEY, "Accept": "application/json"}
     
-    # クエリ条件の構築（@pocketのAPI仕様に合わせた条件指定）
     query_parts = []
     if start_d:
         query_parts.append(f'updatedAt >= "{start_d} 00:00:00"')
@@ -102,7 +98,6 @@ def fetch_records_with_query(start_d=None, end_d=None, limit_count=500):
             result = response.json()
             return result.get("records", result.get("Data", result.get("Records", [])))
         else:
-            # クエリ未対応またはエラー時のフォールバック（全件から新着順で安全に取得）
             params_fallback = {"sort": "-recordId", "limit": limit_count}
             response_fb = requests.get(url, headers=headers, params=params_fallback, timeout=30)
             if response_fb.status_code == 200:
@@ -365,9 +360,11 @@ with tab_order:
                 if parsed:
                     suppliers = {}
                     for row in parsed:
-                        sup = row.get(supplier_key, "未指定発注先")
-                        if not sup:
-                            sup = "未指定発注先"
+                        sup = row.get(supplier_key, "")
+                        # 💡 ここで発注先が空欄、未指定、または「未指定発注先」のものを除外します
+                        if not sup or sup in ["未指定発注先", "未指定", "未定"]:
+                            continue
+                            
                         if sup not in suppliers:
                             suppliers[sup] = []
                         suppliers[sup].append(row)
@@ -385,7 +382,7 @@ with tab_order:
                             key=f"pdf_{f_id}_{sup_name}"
                         )
             if not has_supplier_data:
-                st.info("ℹ️ この受注番号には外発注明細データが登録されていません。")
+                st.info("ℹ️ この受注番号には有効な発注先が指定された外発注明細データが登録されていません。")
                 
             with st.expander("🔍 このレコードの生JSONデータ構造を確認"):
                 st.json(record_data)
@@ -407,7 +404,6 @@ with tab_summary:
         
     if run_summary:
         with st.spinner("サーバーからデータを取得・集計中..."):
-            # 指定された期間を文字列に変換してクエリ検索
             start_str = start_date.strftime("%Y-%m-%d") if start_date else None
             end_str = end_date.strftime("%Y-%m-%d") if end_date else None
             
@@ -427,7 +423,6 @@ with tab_summary:
                         for d in parsed_details:
                             delivery_date_str = d.get("納入日", "")
                             
-                            # アプリ側でも念のため期間内か厳密にチェック
                             if start_date or end_date:
                                 if delivery_date_str:
                                     try:
