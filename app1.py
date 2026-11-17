@@ -106,12 +106,12 @@ def fetch_record_by_order(order_no):
     return None
 
 # ==========================================
-# PDF生成関数 (A5横サイズ・幅調整済み)
+# PDF生成関数 (A5横サイズ・幅完全安全調整版)
 # ==========================================
 def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
     buffer = io.BytesIO()
-    # A5横サイズ width=595.27, 余白左右各18pt -> 描画可能幅 = 559.27pt
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(A5), leftMargin=18, rightMargin=18, topMargin=18, bottomMargin=18)
+    # A5横幅=595.27pt, 余白左右各15pt -> 描画可能幅=565.27pt
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A5), leftMargin=15, rightMargin=15, topMargin=15, bottomMargin=15)
     
     font_path = "NotoSansJP-Regular.ttf"
     if os.path.exists(font_path):
@@ -124,10 +124,10 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
     NAVY_LIGHT = colors.HexColor('#F0F4F8')
     TEXT_DARK = colors.HexColor('#222222')
     
-    title_style = ParagraphStyle('TitleStyle', fontName=font_name, fontSize=13, leading=15, textColor=NAVY_MAIN, alignment=1)
-    cell_style = ParagraphStyle('CellStyle', fontName=font_name, fontSize=7.5, leading=9.5, textColor=TEXT_DARK)
-    header_cell_style = ParagraphStyle('HeaderCellStyle', fontName=font_name, fontSize=7.5, leading=9.5, textColor=colors.white)
-    issuer_style = ParagraphStyle('IssuerStyle', fontName=font_name, fontSize=7.5, leading=10, textColor=TEXT_DARK)
+    title_style = ParagraphStyle('TitleStyle', fontName=font_name, fontSize=12, leading=14, textColor=NAVY_MAIN, alignment=1)
+    cell_style = ParagraphStyle('CellStyle', fontName=font_name, fontSize=7, leading=9, textColor=TEXT_DARK)
+    header_cell_style = ParagraphStyle('HeaderCellStyle', fontName=font_name, fontSize=7, leading=9, textColor=colors.white)
+    issuer_style = ParagraphStyle('IssuerStyle', fontName=font_name, fontSize=7, leading=9.5, textColor=TEXT_DARK)
     
     story = []
     
@@ -137,13 +137,12 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
     
     issuer_html = (
         "<b>ヤマノ印刷株式会社</b><br/>"
-        "〒101-0044 千代田区鍛冶町1-6-15<br/>"
-        "TEL: 03-3253-8851<br/>"
+        "〒101-0044 千代田区鍛冶町1-6-15 TEL: 03-3253-8851<br/>"
         f"<b>担当:</b> {staff_name}"
     )
     
     dest_html = (
-        f"<b>発注先:</b> <font size=10><b>{supplier_name} 御中</b></font><br/>"
+        f"<b>発注先:</b> <font size=9.5><b>{supplier_name} 御中</b></font>  "
         f"<b>受注番号:</b> {order_no}  <b>得意先名:</b> {customer}"
     )
     
@@ -152,21 +151,21 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
         [Paragraph(issuer_html, issuer_style), Paragraph(dest_html, issuer_style)]
     ]
     
-    # ヘッダー幅合計 = 555pt (描画可能幅559pt内に収める)
-    t_header = Table(header_table_data, colWidths=[230, 325])
+    # ヘッダー幅合計 = 535pt (描画可能幅内に確実に収める)
+    t_header = Table(header_table_data, colWidths=[200, 335])
     t_header.setStyle(TableStyle([
         ('SPAN', (0,0), (1,0)),
         ('BACKGROUND', (0,0), (-1,-1), NAVY_LIGHT),
         ('BOX', (0,0), (-1,-1), 1, NAVY_MAIN),
         ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#D0DCE5')),
-        ('TOPPADDING', (0,0), (-1,-1), 4),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-        ('LEFTPADDING', (0,0), (-1,-1), 6),
-        ('RIGHTPADDING', (0,0), (-1,-1), 6),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('LEFTPADDING', (0,0), (-1,-1), 5),
+        ('RIGHTPADDING', (0,0), (-1,-1), 5),
     ]))
     
     story.append(t_header)
-    story.append(Spacer(1, 8))
+    story.append(Spacer(1, 6))
     
     table_content = []
     table_styles = [
@@ -174,13 +173,13 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
         ('INNERGRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
         ('BACKGROUND', (0,0), (-1,0), NAVY_MAIN),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('TOPPADDING', (0,0), (-1,-1), 3),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
-        ('LEFTPADDING', (0,0), (-1,-1), 3),
-        ('RIGHTPADDING', (0,0), (-1,-1), 3),
+        ('TOPPADDING', (0,0), (-1,-1), 2.5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 2.5),
+        ('LEFTPADDING', (0,0), (-1,-1), 2.5),
+        ('RIGHTPADDING', (0,0), (-1,-1), 2.5),
     ]
     
-    # 共通合計幅を正確に555ptに設定（各明細の列幅計）
+    # すべてのテーブルの列幅合計をちょうど 535pt に統一
     if sub_type == "用紙外発注":
         table_content.append([
             Paragraph("用途", header_cell_style), Paragraph("納品先", header_cell_style),
@@ -190,7 +189,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
             Paragraph("枚数", header_cell_style), Paragraph("納入日", header_cell_style),
             Paragraph("時間", header_cell_style)
         ])
-        col_widths = [45, 52, 55, 48, 38, 32, 42, 50, 42, 53, 48] # 合計555pt
+        col_widths = [45, 52, 55, 45, 38, 30, 40, 48, 42, 50, 40] # 合計535pt
         
         for idx, row in enumerate(rows_data):
             n_date = str(row.get('納入日', ''))[5:]
@@ -221,7 +220,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
             Paragraph("表/裏", header_cell_style), Paragraph("台/版", header_cell_style),
             Paragraph("納入日", header_cell_style)
         ])
-        col_widths = [45, 52, 55, 48, 38, 32, 42, 42, 45, 45, 61] # 合計555pt
+        col_widths = [45, 52, 55, 45, 38, 30, 40, 40, 42, 42, 86] # 合計535pt
         
         for idx, row in enumerate(rows_data):
             n_date = str(row.get('納入日', ''))[5:]
@@ -251,7 +250,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
             Paragraph("納入日", header_cell_style), Paragraph("時間", header_cell_style),
             Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style)
         ])
-        col_widths = [55, 75, 55, 55, 110, 55, 60, 40, 0, 0, 0] # 合計555pt
+        col_widths = [55, 75, 55, 55, 110, 55, 60, 70, 0, 0, 0] # 合計535pt
         
         for idx, row in enumerate(rows_data):
             n_date = str(row.get('納入日', ''))[5:]
@@ -278,7 +277,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
             Paragraph("納入日", header_cell_style), Paragraph("時間", header_cell_style),
             Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style)
         ])
-        col_widths = [110, 50, 65, 70, 65, 50, 35, 30, 30, 25, 25] # 合計555pt
+        col_widths = [110, 50, 65, 70, 65, 50, 35, 30, 30, 15, 15] # 合計535pt
         
         for idx, row in enumerate(rows_data):
             n_date = str(row.get('納入日', ''))[5:]
