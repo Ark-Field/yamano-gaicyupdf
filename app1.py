@@ -106,14 +106,13 @@ def fetch_record_by_order(order_no):
     return None
 
 # ==========================================
-# PDF生成関数 (A5横サイズ・濃紺テーマ)
+# PDF生成関数 (A5横サイズ・幅調整済み)
 # ==========================================
 def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
     buffer = io.BytesIO()
-    # A5横サイズ (Landscape A5: width=595.27, height=419.52 points)
+    # A5横サイズ width=595.27, 余白左右各18pt -> 描画可能幅 = 559.27pt
     doc = SimpleDocTemplate(buffer, pagesize=landscape(A5), leftMargin=18, rightMargin=18, topMargin=18, bottomMargin=18)
     
-    # フォント登録
     font_path = "NotoSansJP-Regular.ttf"
     if os.path.exists(font_path):
         pdfmetrics.registerFont(TTFont('NotoSansJP', font_path))
@@ -121,9 +120,6 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
     else:
         font_name = 'Helvetica'
         
-    styles = getSampleStyleSheet()
-    
-    # カラー定義（濃紺テーマ）
     NAVY_MAIN = colors.HexColor('#1B365D')
     NAVY_LIGHT = colors.HexColor('#F0F4F8')
     TEXT_DARK = colors.HexColor('#222222')
@@ -137,11 +133,8 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
     
     order_no = rec.get('field-95', '')
     customer = rec.get('field-98', '')
-    
-    # 各行から発注者名を取得（共通または最初の行のもの）
     staff_name = rows_data[0].get('発注者', rec.get('field-100', '')) if rows_data else rec.get('field-100', '')
     
-    # 2カラムヘッダー (左側：発行元情報、右側：宛先・受注番号等)
     issuer_html = (
         "<b>ヤマノ印刷株式会社</b><br/>"
         "〒101-0044 千代田区鍛冶町1-6-15<br/>"
@@ -155,11 +148,12 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
     )
     
     header_table_data = [
-        [Paragraph(title_text := f"<b>発 注 書（{sub_type}）</b>", title_style), Paragraph("", issuer_style)],
+        [Paragraph(f"<b>発 注 書（{sub_type}）</b>", title_style), Paragraph("", issuer_style)],
         [Paragraph(issuer_html, issuer_style), Paragraph(dest_html, issuer_style)]
     ]
     
-    t_header = Table(header_table_data, colWidths=[240, 315])
+    # ヘッダー幅合計 = 555pt (描画可能幅559pt内に収める)
+    t_header = Table(header_table_data, colWidths=[230, 325])
     t_header.setStyle(TableStyle([
         ('SPAN', (0,0), (1,0)),
         ('BACKGROUND', (0,0), (-1,-1), NAVY_LIGHT),
@@ -182,8 +176,11 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('TOPPADDING', (0,0), (-1,-1), 3),
         ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('LEFTPADDING', (0,0), (-1,-1), 3),
+        ('RIGHTPADDING', (0,0), (-1,-1), 3),
     ]
     
+    # 共通合計幅を正確に555ptに設定（各明細の列幅計）
     if sub_type == "用紙外発注":
         table_content.append([
             Paragraph("用途", header_cell_style), Paragraph("納品先", header_cell_style),
@@ -193,7 +190,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
             Paragraph("枚数", header_cell_style), Paragraph("納入日", header_cell_style),
             Paragraph("時間", header_cell_style)
         ])
-        col_widths = [45, 52, 55, 48, 40, 35, 42, 50, 42, 53, 43]
+        col_widths = [45, 52, 55, 48, 38, 32, 42, 50, 42, 53, 48] # 合計555pt
         
         for idx, row in enumerate(rows_data):
             n_date = str(row.get('納入日', ''))[5:]
@@ -210,7 +207,6 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
                 Paragraph(n_date, cell_style),
                 Paragraph(str(row.get('時間', '')), cell_style)
             ])
-            # 備考欄（横長フル活用：全列スパン）
             remark_row_idx = len(table_content)
             table_content.append([Paragraph(f"<b>備考:</b> {row.get('備考', '')}", cell_style)] + [''] * 10)
             table_styles.append(('SPAN', (0, remark_row_idx), (10, remark_row_idx)))
@@ -225,7 +221,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
             Paragraph("表/裏", header_cell_style), Paragraph("台/版", header_cell_style),
             Paragraph("納入日", header_cell_style)
         ])
-        col_widths = [45, 52, 55, 48, 40, 35, 42, 42, 45, 45, 56]
+        col_widths = [45, 52, 55, 48, 38, 32, 42, 42, 45, 45, 61] # 合計555pt
         
         for idx, row in enumerate(rows_data):
             n_date = str(row.get('納入日', ''))[5:]
@@ -255,7 +251,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
             Paragraph("納入日", header_cell_style), Paragraph("時間", header_cell_style),
             Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style)
         ])
-        col_widths = [55, 75, 55, 55, 105, 55, 60, 45, 0, 0, 0] # 9列目以降は非表示に近い形
+        col_widths = [55, 75, 55, 55, 110, 55, 60, 40, 0, 0, 0] # 合計555pt
         
         for idx, row in enumerate(rows_data):
             n_date = str(row.get('納入日', ''))[5:]
@@ -270,7 +266,6 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
                 Paragraph(str(row.get('時間', '')), cell_style),
                 '', '', ''
             ])
-            # 横長にフル活用（0～10列目をスパン）
             remark_row_idx = len(table_content)
             table_content.append([Paragraph(f"<b>備考:</b> {row.get('備考', '')}", cell_style)] + [''] * 10)
             table_styles.append(('SPAN', (0, remark_row_idx), (10, remark_row_idx)))
@@ -283,7 +278,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
             Paragraph("納入日", header_cell_style), Paragraph("時間", header_cell_style),
             Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style), Paragraph("", header_cell_style)
         ])
-        col_widths = [110, 50, 60, 65, 60, 45, 35, 35, 30, 30, 35]
+        col_widths = [110, 50, 65, 70, 65, 50, 35, 30, 30, 25, 25] # 合計555pt
         
         for idx, row in enumerate(rows_data):
             n_date = str(row.get('納入日', ''))[5:]
@@ -296,13 +291,13 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
                 Paragraph(str(row.get('時間', '')), cell_style),
                 '', '', '', '', ''
             ])
-            # 2段目：依頼内容（横長フル活用）
+            # 2段目：依頼内容
             req_row_idx = len(table_content)
             table_content.append([Paragraph(f"<b>依頼内容:</b> {row.get('作業内容・仕様', '')}", cell_style)] + [''] * 10)
             table_styles.append(('SPAN', (0, req_row_idx), (10, req_row_idx)))
             table_styles.append(('BACKGROUND', (0, req_row_idx), (10, req_row_idx), colors.HexColor('#F8F9FA')))
             
-            # 3段目：備考（横長フル活用）
+            # 3段目：備考
             rem_row_idx = len(table_content)
             table_content.append([Paragraph(f"<b>備考:</b> {row.get('備考', '')}", cell_style)] + [''] * 10)
             table_styles.append(('SPAN', (0, rem_row_idx), (10, rem_row_idx)))
