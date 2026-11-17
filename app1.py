@@ -76,14 +76,30 @@ def parse_sub_table(sub_list, target_field_id):
     return flattened
 
 @st.cache_data(ttl=60)
-def fetch_all_records():
+def fetch_recent_records(limit_count=300):
+    """
+    1000件の壁・タイムアウト対策として、新しい順に指定件数（デフォルト300件）を取得する
+    """
     url = f"{POCKET_BASE_URL}/api/apps/{APP_ID}/records"
     headers = {"X-At-Pocket-API-Key": POCKET_API_KEY, "Accept": "application/json"}
+    # 新しい順（降順: recordId desc または updatedAt desc）に並び替えるクエリパラメータ
+    params = {
+        "sort": "-recordId",  # または "-updatedAt"
+        "limit": limit_count
+    }
     try:
-        response = requests.get(url, headers=headers, timeout=15)
+        response = requests.get(url, headers=headers, params=params, timeout=25)
         if response.status_code == 200:
             result = response.json()
             return result.get("records", result.get("Data", result.get("Records", [])))
+        else:
+            # ソートパラメータが非対応の場合のフォールバック
+            response_fallback = requests.get(url, headers=headers, timeout=25)
+            if response_fallback.status_code == 200:
+                res_fb = response_fallback.json()
+                recs = res_fb.get("records", res_fb.get("Data", res_fb.get("Records", [])))
+                # クライアント側で新しい順（recordIdの降順）にソート
+                return sorted(recs, key=lambda x: int(x.get("recordId", 0)), reverse=True)[:limit_count]
     except Exception as e:
         st.error(f"API通信エラー: {e}")
     return []
@@ -370,9 +386,8 @@ with tab_order:
 
 with tab_summary:
     st.subheader("📊 外発注の期間集計・クロス集計")
-    st.info("💡 全件データを取得し、納入日などの日付範囲で絞り込んで集計できます。")
+    st.info("💡 1000件の壁対策として、**新しいデータから順に最大300件**を効率よく取得し、納入日などの日付で絞り込んで集計します。")
     
-    # 📅 日付フィルター用の入力コントロール
     col_f1, col_f2, col_f3 = st.columns([2, 2, 3])
     with col_f1:
         start_date = st.date_input("開始日（納入日基準）", value=None)
@@ -380,11 +395,11 @@ with tab_summary:
         end_date = st.date_input("終了日（納入日基準）", value=None)
     with col_f3:
         st.markdown("<br>", unsafe_allow_html=True)
-        run_summary = st.button("🔄 データを一括取得して集計を実行", type="primary")
+        run_summary = st.button("🔄 新しいデータから取得して集計を実行", type="primary")
         
     if run_summary:
-        with st.spinner("全レコードを取得・集計中..."):
-            all_records = fetch_all_records()
+        with st.spinner("新しいデータを取得・集計中..."):
+            all_records = fetch_recent_records(limit_count=300)
             if all_records:
                 summary_list = []
                 for item in all_records:
@@ -397,13 +412,11 @@ with tab_summary:
                         raw_details = rec.get(f_id, [])
                         parsed_details = parse_sub_table(raw_details, f_id)
                         for d in parsed_details:
-                            # 納入日の取得と日付フィルタリング
                             delivery_date_str = d.get("納入日", "")
                             
-                            # 日付範囲フィルターの適用チェック
                             if start_date or end_date:
                                 if not delivery_date_str:
-                                    continue # 納入日が空のものはスキップ
+                                    continue
                                 try:
                                     d_date = datetime.strptime(str(delivery_date_str)[:10], "%Y-%m-%d").date()
                                     if start_date and d_date < start_date:
@@ -411,7 +424,7 @@ with tab_summary:
                                     if end_date and d_date > end_date:
                                         continue
                                 except ValueError:
-                                    pass # パースできない形式はそのまま通すかスキップ
+                                    pass
                                     
                             summary_list.append({
                                 "受注番号": order_no,
@@ -440,4 +453,4 @@ with tab_summary:
                 else:
                     st.warning("⚠️ 指定した条件（期間）に一致する外発注明細データが見つかりませんでした。")
             else:
-                st.error("❌ レコードの取得に失敗しました。")
+                st.error("❌ レコードの取得に失敗しました。タイムアウトまたはAPI接続をご確認ください。")
