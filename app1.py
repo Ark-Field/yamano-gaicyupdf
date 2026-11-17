@@ -76,32 +76,29 @@ def parse_sub_table(sub_list, target_field_id):
     return flattened
 
 @st.cache_data(ttl=60)
-def fetch_recent_records(limit_count=300):
+def fetch_recent_records(limit_count=100):
     """
-    1000件の壁・タイムアウト対策として、新しい順に指定件数（デフォルト300件）を取得する
+    タイムアウトと1000件の壁を防ぐため、取得件数をデフォルト100件に絞り、タイムアウトを35秒に延長
     """
     url = f"{POCKET_BASE_URL}/api/apps/{APP_ID}/records"
     headers = {"X-At-Pocket-API-Key": POCKET_API_KEY, "Accept": "application/json"}
-    # 新しい順（降順: recordId desc または updatedAt desc）に並び替えるクエリパラメータ
     params = {
-        "sort": "-recordId",  # または "-updatedAt"
+        "sort": "-recordId",
         "limit": limit_count
     }
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=25)
+        response = requests.get(url, headers=headers, params=params, timeout=35)
         if response.status_code == 200:
             result = response.json()
             return result.get("records", result.get("Data", result.get("Records", [])))
         else:
-            # ソートパラメータが非対応の場合のフォールバック
-            response_fallback = requests.get(url, headers=headers, timeout=25)
+            response_fallback = requests.get(url, headers=headers, timeout=35)
             if response_fallback.status_code == 200:
                 res_fb = response_fallback.json()
                 recs = res_fb.get("records", res_fb.get("Data", res_fb.get("Records", [])))
-                # クライアント側で新しい順（recordIdの降順）にソート
                 return sorted(recs, key=lambda x: int(x.get("recordId", 0)), reverse=True)[:limit_count]
     except Exception as e:
-        st.error(f"API通信エラー: {e}")
+        st.error(f"API通信エラー（タイムアウト等）: {e}")
     return []
 
 def fetch_record_by_order(order_no):
@@ -386,7 +383,7 @@ with tab_order:
 
 with tab_summary:
     st.subheader("📊 外発注の期間集計・クロス集計")
-    st.info("💡 1000件の壁対策として、**新しいデータから順に最大300件**を効率よく取得し、納入日などの日付で絞り込んで集計します。")
+    st.info("💡 サーバー負荷とタイムアウトを防ぐため、**最新100件**のデータを取得し、納入日などの日付で絞り込んで集計します。")
     
     col_f1, col_f2, col_f3 = st.columns([2, 2, 3])
     with col_f1:
@@ -395,11 +392,11 @@ with tab_summary:
         end_date = st.date_input("終了日（納入日基準）", value=None)
     with col_f3:
         st.markdown("<br>", unsafe_allow_html=True)
-        run_summary = st.button("🔄 新しいデータから取得して集計を実行", type="primary")
+        run_summary = st.button("🔄 最新データから取得して集計を実行", type="primary")
         
     if run_summary:
-        with st.spinner("新しいデータを取得・集計中..."):
-            all_records = fetch_recent_records(limit_count=300)
+        with st.spinner("サーバーから最新データを取得・集計中..."):
+            all_records = fetch_recent_records(limit_count=100)
             if all_records:
                 summary_list = []
                 for item in all_records:
@@ -453,4 +450,4 @@ with tab_summary:
                 else:
                     st.warning("⚠️ 指定した条件（期間）に一致する外発注明細データが見つかりませんでした。")
             else:
-                st.error("❌ レコードの取得に失敗しました。タイムアウトまたはAPI接続をご確認ください。")
+                st.error("❌ レコードの取得に失敗しました。APIの接続状態をご確認ください。")
