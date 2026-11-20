@@ -70,14 +70,14 @@ if st.sidebar.button("🚪 ログアウト"):
 # 項目名（日本語ラベル）のマッピング辞書
 # ==========================================
 LABEL_MAPPINGS = {
-    "field-151": { # 用紙外発注
+    "field-151": { # 用紙発注
         "field-151_1": "用途", "field-151_22": "納品先", "field-151_2": "用紙銘柄",
         "field-151_25": "原紙サイズ", "field-151_4": "斤量", "field-151_3": "目",
         "field-151_20": "全判紙数", "field-151_26": "断裁後サイズ", "field-151_35": "納入枚数",
         "field-151_17": "納入日", "field-151_23": "時間", "field-151_24": "備考",
         "field-151_18": "発注先", "field-151_16": "発注者",
     },
-    "field-162": { # 印刷外発注
+    "field-162": { # 印刷発注
         "field-162_19": "用途", "field-162_17": "納品先", "field-162_1": "用紙銘柄",
         "field-162_2": "印刷サイズ", "field-162_21": "斤量", "field-162_20": "目",
         "field-162_6": "通数", "field-162_7": "頁数", "field-162_9": "色表",
@@ -85,13 +85,13 @@ LABEL_MAPPINGS = {
         "field-162_13": "納入日", "field-162_18": "時間", "field-162_16": "備考",
         "field-162_5": "発注先", "field-162_14": "発注者",
     },
-    "field-153": { # 製本外発注
+    "field-153": { # 製本発注
         "field-153_1": "用途", "field-153_31": "納品先", "field-153_33": "製本",
         "field-153_34": "加工", "field-153_29": "詳細", "field-153_8": "部数",
         "field-153_26": "納入日", "field-153_32": "時間", "field-153_12": "備考",
         "field-153_27": "発注先", "field-153_9": "発注者"
     },
-    "field-155": { # その他外発注
+    "field-155": { # その他発注
         "field-155_6": "発注先", "field-155_10": "納品先", "field-155_7": "数量",
         "field-155_3": "仕入単価", "field-155_9": "合計金額", "field-155_4": "納入日",
         "field-155_8": "時間", "field-155_1": "作業内容・仕様", "field-155_11": "備考",
@@ -252,7 +252,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
     
     col_widths = [48, 52, 55, 48, 42, 38, 45, 52, 45, 55, 55]
     
-    if sub_type == "用紙外発注":
+    if sub_type == "用紙発注":
         table_content.append([
             Paragraph("用途", header_cell_style), Paragraph("納品先", header_cell_style),
             Paragraph("用紙銘柄", header_cell_style), Paragraph("原紙サイズ", header_cell_style),
@@ -281,7 +281,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
             table_styles.append(('SPAN', (0, r_idx), (10, r_idx)))
             table_styles.append(('BACKGROUND', (0, r_idx), (10, r_idx), colors.HexColor('#F8F9FA')))
             
-    elif sub_type == "印刷外発注":
+    elif sub_type == "印刷発注":
         table_content.append([
             Paragraph("用途", header_cell_style), Paragraph("納品先", header_cell_style),
             Paragraph("用紙銘柄", header_cell_style), Paragraph("印刷サイズ", header_cell_style),
@@ -310,7 +310,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
             table_styles.append(('SPAN', (0, r_idx), (10, r_idx)))
             table_styles.append(('BACKGROUND', (0, r_idx), (10, r_idx), colors.HexColor('#F8F9FA')))
 
-    elif sub_type == "製本外発注":
+    elif sub_type == "製本発注":
         table_content.append([
             Paragraph("用途", header_cell_style), Paragraph("納品先", header_cell_style),
             Paragraph("製本", header_cell_style), Paragraph("加工", header_cell_style),
@@ -336,7 +336,7 @@ def generate_order_pdf(rec, sub_type, supplier_name, rows_data):
             table_styles.append(('SPAN', (0, r_idx), (10, r_idx)))
             table_styles.append(('BACKGROUND', (0, r_idx), (10, r_idx), colors.HexColor('#F8F9FA')))
 
-    elif sub_type == "その他外発注":
+    elif sub_type == "その他発注":
         table_content.append([
             Paragraph("納品先", header_cell_style), Paragraph("数量", header_cell_style),
             Paragraph("仕入単価", header_cell_style), Paragraph("合計金額", header_cell_style),
@@ -407,10 +407,10 @@ with tab_order:
             st.markdown("### 📄 発注先ごとの発注書PDFダウンロード")
             
             target_tables = {
-                "用紙外発注": ("field-151", "発注先"),
-                "印刷外発注": ("field-162", "発注先"),
-                "製本外発注": ("field-153", "発注先"),
-                "その他外発注": ("field-155", "発注先")
+                "用紙発注": ("field-151", "発注先"),
+                "印刷発注": ("field-162", "発注先"),
+                "製本発注": ("field-153", "発注先"),
+                "その他発注": ("field-155", "発注先")
             }
             
             has_supplier_data = False
@@ -574,39 +574,39 @@ with tab_summary:
                 )
                 st.markdown("---")
                 
-                t_paper, t_print, t_book, t_other = st.tabs(["📄 用紙外発注", "🖨️ 印刷外発注", "📚 製本外発注", "📦 その他外発注"])
+                t_paper, t_print, t_book, t_other = st.tabs(["📄 用紙発注", "🖨️ 印刷発注", "📚 製本発注", "📦 その他発注"])
                 
                 with t_paper:
                     df_p = pd.DataFrame(lists_by_type["用紙"])
                     if not df_p.empty:
-                        st.success(f"用紙外発注: {len(df_p)}件")
+                        st.success(f"用紙発注: {len(df_p)}件")
                         st.dataframe(df_p, use_container_width=True)
                     else:
-                        st.info("該当する用紙外発注データはありません。")
+                        st.info("該当する用紙発注データはありません。")
                         
                 with t_print:
                     df_pr = pd.DataFrame(lists_by_type["印刷"])
                     if not df_pr.empty:
-                        st.success(f"印刷外発注: {len(df_pr)}件")
+                        st.success(f"印刷発注: {len(df_pr)}件")
                         st.dataframe(df_pr, use_container_width=True)
                     else:
-                        st.info("該当する印刷外発注データはありません。")
+                        st.info("該当する印刷発注データはありません。")
                         
                 with t_book:
                     df_b = pd.DataFrame(lists_by_type["製本"])
                     if not df_b.empty:
-                        st.success(f"製本外発注: {len(df_b)}件")
+                        st.success(f"製本発注: {len(df_b)}件")
                         st.dataframe(df_b, use_container_width=True)
                     else:
-                        st.info("該当する製本外発注データはありません。")
+                        st.info("該当する製本発注データはありません。")
                         
                 with t_other:
                     df_o = pd.DataFrame(lists_by_type["その他"])
                     if not df_o.empty:
-                        st.success(f"その他外発注: {len(df_o)}件")
+                        st.success(f"その他発注: {len(df_o)}件")
                         st.dataframe(df_o, use_container_width=True)
                     else:
-                        st.info("該当するその他外発注データはありません。")
+                        st.info("該当するその他発注データはありません。")
                         
             else:
                 st.error("❌ レコードの取得に失敗しました。タイムアウトまたはAPI接続をご確認ください。")
